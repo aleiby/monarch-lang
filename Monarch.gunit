@@ -1,0 +1,498 @@
+gunit Monarch;
+
+
+//------------------- block
+block:
+
+"{ foo(); }" OK
+
+//------------------- expression
+expression:
+
+"delete Obj.Var" OK
+
+//------------------- assignment_expression
+assignment_expression:
+
+"x = y" OK
+
+"x += y = 10" OK
+
+"a=b=c" OK
+
+"a=b+=c" OK
+
+"x = 1.0" OK
+
+"foo.bar() < 10" OK
+
+//------------------- logical_or_expression
+logical_or_expression:
+
+"x || y" OK
+
+//------------------- logical_and_expression
+logical_and_expression:
+
+"x && y" OK
+
+//------------------- equality_expression
+equality_expression:
+
+"x == y" OK
+
+"x != y" OK
+
+//------------------- forStatement
+forStatement:
+
+"for (i = 0; i < 10; i++){}" OK
+
+//------------------- ifStatement
+ifStatement:
+
+"if (1) {}" OK
+
+//------------------- StringLiteral
+StringLiteral:
+
+"\"Test\"" OK
+
+"'Test'" OK
+
+"\"result:%d\"" OK
+
+//------------------- whileStatement
+whileStatement:
+
+"while (1) {}" OK
+
+//------------------- Comment
+Comment:
+
+"/* test */" OK
+
+//------------------- LineComment
+LineComment:
+
+"// test" OK
+
+//------------------- switchStatement
+switchStatement:
+
+<<switch ( foo() )
+{
+    case "1": print("one");
+    case "2": print("two");
+}>> OK
+
+//------------------- throwStatement
+throwStatement:
+
+"throw {name:foo};" OK
+
+//------------------- tryStatement
+tryStatement:
+
+<<try
+{
+    foo();
+}
+catch (e)
+{
+    e.print();
+}>> OK
+
+//------------------- Integer
+Integer:
+
+"0" OK
+
+"00" FAIL
+
+"01" FAIL
+
+"1" OK
+
+"123" OK
+
+"ABC" FAIL
+
+"3.0" FAIL
+
+//------------------- Fraction
+Fraction:
+
+".0" OK
+
+"..0" FAIL
+
+"0.0" FAIL
+
+".e" FAIL
+
+//------------------- Exponent
+Exponent:
+
+"e10" OK
+
+"E2" OK
+
+"e+12" OK
+
+"e-12" OK
+
+//------------------- Letter
+Letter:
+
+"a" OK
+
+"b" OK
+
+"c" OK
+
+"A" OK
+
+"B" OK
+
+"C" OK
+
+"aaa" FAIL
+
+"1" FAIL
+
+//------------------- Digit
+Digit:
+
+"0" OK
+
+"1" OK
+
+"2" OK
+
+"3" OK
+
+"4" OK
+
+"5" OK
+
+"6" OK
+
+"7" OK
+
+"8" OK
+
+"9" OK
+
+"A" FAIL
+
+"00" FAIL
+
+//------------------- arrayLiteral
+arrayLiteral:
+
+"[]" OK
+
+"[0]" OK
+
+"[i]" OK
+
+"[i++]" OK
+
+"[foo()]" OK
+
+"[foo.index]" OK
+
+//------------------- breakStatement
+breakStatement:
+
+"break;" OK
+
+"break Outer;" OK
+
+"break foo();" FAIL
+
+"break (Outer);" FAIL
+
+"break foo.label;" FAIL
+
+//------------------- caseClause
+caseClause:
+
+"case 1:" OK
+
+"default:" FAIL
+
+//------------------- additive_expression
+additive_expression:
+
+"2+3" OK
+
+"2+3"  -> (+ 2 3)
+
+"a-b" OK
+
+"a-b"  -> (- a b)
+
+//------------------- multiplicative_expression
+multiplicative_expression:
+
+"4*5" OK
+
+"4*5"  -> (* 4 5)
+
+"4/5" OK
+
+"4/5"  -> (/ 4 5)
+
+"4/5"  -> (/ 4 5)
+
+"9%3" OK
+
+"9%3"  -> (% 9 3)
+
+//------------------- lvalue
+lvalue:
+
+"foo" OK
+
+"foo()" FAIL
+
+//------------------- disruptiveStatement
+disruptiveStatement:
+
+"break;" OK
+
+"return;" OK
+
+"throw;" FAIL
+
+"break Success;" OK
+
+"break Success();" FAIL
+
+"throw Foo();" OK
+
+"throw (i < 0); // should this work?" FAIL
+
+<<throw
+Foo(); /* This isn't allowed by the standard,
+	but since we aren't automatically
+	inserting semicolons, it's
+	much less of an issue. */>> FAIL
+
+//------------------- doStatement
+doStatement:
+
+<<do
+{
+    foo++;
+} while (true);>> OK
+
+"do{} while (1);" OK
+
+"do { foo(); } while;" FAIL
+
+//------------------- expressionStatement
+expressionStatement:
+
+"i = 10" OK
+
+"i < 10" OK
+
+"i = 1, j = 2" OK
+
+"i = 10, j < 12 // why would you ever want to do this?" FAIL
+
+//------------------- conditional_expression
+conditional_expression:
+
+"a && b || (c == d && e != f)" OK
+
+//------------------- relational_expression
+relational_expression:
+
+"i > 2" OK
+
+"i < 2" OK
+
+"i >= 2" OK
+
+"i <= 2" OK
+
+//------------------- unary_expression
+unary_expression:
+
+"i++" OK
+
+"i--" OK
+
+"++i" OK
+
+"--i" OK
+
+"foo.bar" OK
+
+"foo.bar()" OK
+
+"foo[i]" OK
+
+"foo(bar)" OK
+
+//------------------- postfix_expression
+postfix_expression:
+
+"i++" OK
+
+"i--" OK
+
+"i[0]" OK
+
+"i[]" FAIL
+
+"foo()" OK
+
+"foo(bar)" OK
+
+"foo.bar" OK
+
+"foo.bar()++" FAIL
+
+<<i
+++>> FAIL
+
+"foo" OK
+
+//------------------- primary_expression
+primary_expression:
+
+"foo" OK
+
+"( i = 10 ) // should this be allowed?" FAIL
+
+"1.0" OK
+
+"\"test\"" OK
+
+//------------------- program
+program:
+
+<<x = 10;
+
+function add(a, b)
+{
+    return a + b;
+}
+
+for (i = 0; i < 10; i++)
+{
+    result = add(x, i);
+    print(\"result:%d\", result);
+}
+>> OK
+
+//------------------- functionBody
+functionBody:
+
+<<{
+    i = 10;
+    j = 12;
+    return i + j;
+}>> OK
+
+//------------------- functionLiteral
+functionLiteral:
+
+<<function Foo( x )
+{
+    return x + 1;
+}>> OK
+
+//------------------- literal
+literal:
+
+"10" OK
+
+"20.0" OK
+
+"0x80 // seems like we might want to support hex at some point" OK
+
+"{}" OK
+
+"[]" OK
+
+"{ foo : bar }" OK
+
+"[ A, B, C ]" OK
+
+"function () { return 10; }" OK
+
+"function { return 10; } // seems like we should be able to drop the empty params" OK
+
+//------------------- objectLiteral
+objectLiteral:
+
+"{}" OK
+
+"{ foo : bar }" OK
+
+"{ foo : i + j }" OK
+
+"{ foo : 10, bar : 20 }" OK
+
+"{ i < 0 : 10 }" FAIL
+
+"{ 10 }" FAIL
+
+<<{
+    foo: 10,
+    bar: 20
+}>> OK
+
+//------------------- namedExpression
+namedExpression:
+
+"foo: bar()" OK
+
+"\"foo\": bar()" OK
+
+//------------------- parameters
+parameters:
+
+"()" OK
+
+<<(
+)>> OK
+
+"( a )" OK
+
+"(A, B, C)" OK
+
+"(10)" FAIL
+
+//------------------- returnStatement
+returnStatement:
+
+"return 10;" OK
+
+"return;" OK
+
+//------------------- statement
+statement:
+
+";" OK
+
+//------------------- labeledStatement
+labeledStatement:
+
+"foo: bar();" OK
+
+"Return: return;" OK
+
+//------------------- statements
+statements:
+
+<<i = 10;
+j = 12;
+while (1) { i++; }
+return (i < j);>> OK
