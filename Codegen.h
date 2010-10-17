@@ -19,7 +19,8 @@ extern "C" {
 
 	LLVMValueRef CreateValue(const char* name);
 	LLVMValueRef LoadValue(LLVMValueRef v, const char* name);
-	LLVMValueRef ConstValue(int value);
+	LLVMValueRef ConstInt(int value);
+	LLVMValueRef ConstString(const char* value, int length);
 	void PrintValue(LLVMValueRef v, const char * name);
 	void Assignment(LLVMValueRef lhs, LLVMValueRef rhs);
 

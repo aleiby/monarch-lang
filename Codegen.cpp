@@ -92,9 +92,14 @@ LLVMValueRef LoadValue(LLVMValueRef v, const char* name)
 	return LLVMBuildLoad(builder, v, name);
 }
 
-LLVMValueRef ConstValue(int value)
+LLVMValueRef ConstInt(int value)
 {
 	return LLVMConstInt(LLVMInt32Type(), value, 0);
+}
+
+LLVMValueRef ConstString(const char* value, int length)
+{
+	return LLVMConstString(value, length, false);
 }
 
 void PrintValue(LLVMValueRef v, const char * name)

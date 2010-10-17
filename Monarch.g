@@ -3,8 +3,8 @@
 // 'finally' clause for try statements?
 // 'else' on for loops?
 // do we want/need 'typeof'?
-// maybe add a 'print' keyword
 // tuples?  expanding for iteration? (a la python)
+// we'll want an 'import' keyword (create a module per file and use LLVM to merge)
 
 grammar Monarch;
 
@@ -20,17 +20,31 @@ tokens
 	LABEL;
 	CALL;
 	INDX;
+	PARAMS;
+	NESTED;
 	
 	INIT;
 	COND;
 	INCR;
 	
 	VAR;
+	FUNC;
+	EXPR;
 	
 	POSTINC;
 	POSTDEC;
 	PREINC;
 	PREDEC;
+
+	ARRAY;
+	BLOCK;
+	OBJECT;
+	
+	WHILE;
+	DO_WHILE;
+	SWITCH;
+	DEFAULT;
+	TRY;
 }
 
 program
@@ -39,18 +53,20 @@ program
 
 arrayLiteral
 	:	'[' expression? ']'
+	->	^( ARRAY expression? )
 	;
 
 block
 	:	'{' statements '}'
+	->	^( BLOCK statements )
 	;
 
 breakStatement
-	:	'break' ( label=NameLiteral )? ';'
+	:	'break'^ label=NameLiteral? ';'!
 	;
 
 caseClause
-	:	'case' expression ':' statements
+	:	'case'^ expression ':'! statements
 	;
 
 disruptiveStatement
@@ -62,6 +78,7 @@ disruptiveStatement
 
 doStatement
 	:	'do' block 'while' '(' expression ')' ';'
+	->	^( DO_WHILE expression block )
 	;
 
 expressionStatement
@@ -69,7 +86,8 @@ expressionStatement
 	;
 
 expression
-	:	assignment_expression ( ','! assignment_expression )*
+	:	assignment_expression ( ',' assignment_expression )*
+	->	^( EXPR assignment_expression+ )
 	;
 
 // why is this its own rule?
@@ -135,9 +153,9 @@ unary_expression
 
 postfix_expression
 	:	( primary_expression -> primary_expression )
-		(	'[' expression ']'		-> ^( INDX $postfix_expression expression? )
+		(	'[' expression ']'		-> ^( INDX $postfix_expression expression )
 		|	'(' expression? ')'		-> ^( CALL $postfix_expression expression? )
-		|	'.' NameLiteral				-> ^( '.' $postfix_expression NameLiteral )
+		|	'.' NameLiteral			-> ^( '.' $postfix_expression NameLiteral )
 		|	'++'					-> ^( POSTINC $postfix_expression )
 		|	'--'					-> ^( POSTDEC $postfix_expression )
 		)*
@@ -152,7 +170,7 @@ unary_operator
 primary_expression
 	:	NameLiteral
 	|	literal
-	|	'(' expression ')' -> expression
+	|	'(' expression ')' -> ^( NESTED expression )
 	;
 
 forStatement
@@ -160,24 +178,23 @@ forStatement
 	(	initialization=expressionStatement?
 	';'	condition=expression?
 	';'	increment=expressionStatement?			-> ^( INIT $initialization )? ^( COND $condition )? ^( INCR $increment )?
-	|	variable=NameLiteral 'in' object=expression	-> ^( VAR $variable $object )
+	|	var=NameLiteral 'in' obj=expression		-> ^( VAR $var $obj )
 	)	')'
 	(	('{')=> block							-> ^( 'for' $forStatement block )
 	|	statement								-> ^( 'for' $forStatement statement )
 	)
 	;
 
-functionBody
-	:	'{' statements '}'
-	;
-
 // should parameters be optional as well?
 functionLiteral
-	:	'function' NameLiteral? parameters functionBody
+	:	'function' name=NameLiteral? args=parameters body=block
+	->	^( FUNC $args $body $name? )
 	;
 
+// what about elseif?
 ifStatement
-	:	'if' '(' expression ')' then=block ( 'else' block )?
+	:	'if' '(' expression ')' if_block=block ( 'else' else_block=block )?
+	->	^( COND expression $if_block $else_block? )
 	;
 
 literal
@@ -197,19 +214,21 @@ NumberLiteral
 	;
 
 objectLiteral
-	:	'{' namedExpressionList? '}'
+	:	'{' vars=namedExpressionList? '}'
+	->	^( OBJECT $vars? )
 	;
 
 namedExpressionList
-	:	namedExpression ( ',' namedExpression )*
+	:	namedExpression ( ','! namedExpression )*
 	;
 
 namedExpression
-	:	( NameLiteral | StringLiteral ) ':' constant_expression
+	:	( NameLiteral | StringLiteral ) ':'^ constant_expression
 	;
 
 parameters
 	:	'(' ( NameLiteral ( ',' NameLiteral )* )? ')'
+	->	^( PARAMS NameLiteral* )
 	;
 
 prefixOperator
@@ -217,7 +236,7 @@ prefixOperator
 	;
 
 returnStatement
-	:	'return' expression? ';'
+	:	'return'^ expression? ';'!
 	;
 
 // what about empty statements?
@@ -249,18 +268,21 @@ StringLiteral
 
 switchStatement
 	:	'switch' '(' expression ')' '{' caseClause* ( 'default' ':' statements )? '}'
+	->	^( SWITCH expression caseClause* ^( DEFAULT statements )? )
 	;
 
 throwStatement
-	:	'throw' expression ';'
+	:	'throw'^ expression ';'!
 	;
 
 tryStatement
-	:	'try' block 'catch' '(' variable=NameLiteral ')' block
+	:	'try' try_block=block 'catch' '(' variable=NameLiteral ')' catch_block=block
+	->	^( TRY $try_block $variable $catch_block ) 
 	;
 
 whileStatement
 	:	'while' '(' expression ')' block
+	->	^( WHILE expression block )
 	;
 
 fragment BSLASH
