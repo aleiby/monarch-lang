@@ -73,54 +73,233 @@ scope Symbols; // global scope
 	:	statements
 	;
 
-statements
-	:	labeledStatement*
+arrayLiteral returns [LLVMValueRef value]
+	:	^( ARRAY expression? )
 	;
 
-label
-	:	^( LABEL NameLiteral )
+block
+	:	^( BLOCK statements )
 	;
 
-labeledStatement
-	:	^( STAT statement label? )
+breakStatement
+	:	^( 'break' label=NameLiteral? )
 	;
 
-statement
-	:	'print' NameLiteral
-		{
-			pANTLR3_STRING name = $NameLiteral.text;
-			PrintValue(getSymbol(ctx, name), (const char *)name->chars);
-		}
-	|	assignment_expression
+caseClause
+	:	^( 'case' expression statements )
 	;
 
-assignment_expression
-	:	^( '=' lvalue r=primary_expression ) { Assignment($lvalue.value, $r.value); }
+disruptiveStatement
+	:	breakStatement
+	|	returnStatement
+	|	throwStatement
+	//	what about continue?
+	;
+
+doStatement
+	:	^( DO_WHILE expression block )
+	;
+
+expressionStatement
+	:	expression
+	;
+
+expression returns [LLVMValueRef value]
+	:	^( EXPR first=assignment_expression assignment_expression* ) { $value = $first.value; }
+	;
+
+// why is this its own rule?
+constant_expression
+	:	conditional_expression
+	;
+
+assignment_expression returns [LLVMValueRef value]
+options {backtrack=true;}
+	:	^( '='  lvalue r=primary_expression ) { Assignment($lvalue.value, $r.value); }
+	|	^( '+=' lvalue r=primary_expression )
+	|	^( '-=' lvalue r=primary_expression )
+	|	^( '*=' lvalue r=primary_expression )
+	|	^( '/=' lvalue r=primary_expression )
+	|	conditional_expression
 	;
 
 lvalue returns [LLVMValueRef value]
-	:	NameLiteral
-		{
-			defineSymbol(ctx, $NameLiteral.text);
-			$value = getSymbol(ctx, $NameLiteral.text);
-		}
+	:	unary_expression { $value = $unary_expression.value; }
+	;
+
+conditional_expression
+	:	logical_or_expression
+		(	^( '?' expression conditional_expression ) )?
+	;
+
+logical_or_expression
+	:	logical_and_expression
+		(	^( '||' logical_and_expression ) )*
+	;
+
+logical_and_expression
+	:	equality_expression
+		(	^( '&&' equality_expression ) )*
+	;
+
+equality_expression
+	:	relational_expression
+		(	^( '==' relational_expression )
+		|	^( '!=' relational_expression )
+		)*
+	;
+
+relational_expression
+	:	additive_expression
+		(	^( '<'  additive_expression )
+		|	^( '>'  additive_expression )
+		|	^( '<=' additive_expression )
+		|	^( '>=' additive_expression )
+		)*
+	;
+
+additive_expression
+	:	multiplicative_expression
+		(	^( '+' multiplicative_expression )
+		|	^( '-' multiplicative_expression )
+		)*
+	;
+
+multiplicative_expression
+	:	unary_expression
+		(	^( '*' unary_expression )
+		|	^( '/' unary_expression )
+		|	^( '%' unary_expression )
+		)*
+	;
+
+unary_expression returns [LLVMValueRef value]
+	:	postfix_expression			{ $value = $postfix_expression.value; }
+	|	'++' unary_expression
+	|	'--' unary_expression
+	|	'+'  unary_expression
+	|	'-'  unary_expression
+	|	'!'  unary_expression
+	|	'typeof' unary_expression
+	|	'delete' unary_expression
+	|	'print' r=unary_expression	{ PrintValue($r.value, ""); }
+	;
+
+postfix_expression returns [LLVMValueRef value]
+	:	primary_expression { $value = $primary_expression.value; }
+	|	^( INDX postfix_expression expression )
+	|	^( CALL postfix_expression expression? )
+	|	^( '.' postfix_expression NameLiteral )
+	|	^( POSTINC postfix_expression )
+	|	^( POSTDEC postfix_expression )
 	;
 
 primary_expression returns [LLVMValueRef value]
 	:	NameLiteral
 		{
 			defineSymbol(ctx, $NameLiteral.text);
-			LLVMValueRef v = getSymbol(ctx, $NameLiteral.text);
-			$value = LoadValue(v, (const char *)$NameLiteral.text->chars);
+			$value = getSymbol(ctx, $NameLiteral.text);
 		}
-	|	literal { $value = $literal.value; }
+	|	literal					{ $value = $literal.value; }
+	|	^( NESTED expression )	{ $value = $expression.value; }
+	;
+
+forStatement
+	:	^( 'for'
+			(	^( INIT initialization=expressionStatement ) )?
+			(	^( COND condition=expression ) )?
+			(	^( INCR increment=expressionStatement ) )?
+			(	^( VAR var=NameLiteral obj=expression ) )?
+		)
+		(	block
+		|	statement
+		)
+	;
+	
+functionLiteral returns [LLVMValueRef value]
+	:	^( FUNC args=parameters body=block name=NameLiteral? )
+	;
+
+ifStatement
+	:	^( COND expression if_block=block else_block=block? )
 	;
 
 literal returns [LLVMValueRef value]
 	:	NumberLiteral
 		{
 			pANTLR3_STRING s = $NumberLiteral.text;
-			$value = ConstValue(s->toInt32(s));
+			$value = ConstInt(s->toInt32(s));
 		}
+	|	StringLiteral
+		{
+			pANTLR3_STRING s = $StringLiteral.text;
+			$value = ConstString((const char *)s->chars, s->len);
+		}
+	|	objectLiteral	{ $value = $objectLiteral.value; }
+	|	arrayLiteral	{ $value = $arrayLiteral.value; }
+	|	functionLiteral	{ $value = $functionLiteral.value; }
 	;
+
+objectLiteral returns [LLVMValueRef value]
+	:	^( OBJECT vars=namedExpression* )
+	;
+
+namedExpression
+	:	^( ':' NameLiteral constant_expression )
+	|	^( ':' StringLiteral constant_expression )
+	;
+
+parameters
+	:	^( PARAMS NameLiteral* )
+	;
+
+prefixOperator
+	:	'typeof' | '+' | '-' | '!'
+	;
+
+returnStatement
+	:	^( 'return' expression? )
+	;
+
+// what about empty statements?
+statement
+	:	(	expressionStatement
+		|	disruptiveStatement
+		|	tryStatement
+		|	ifStatement
+		|	switchStatement
+		|	whileStatement
+		|	forStatement
+		|	doStatement
+		)
+	;
+
+labeledStatement
+	:	^( STAT statement
+			(	^( LABEL NameLiteral ) )? )
+	;
+
+statements
+	:	labeledStatement*
+	;
+
+switchStatement
+	:	^( SWITCH expression caseClause*
+			(	^( DEFAULT statements ) )? )
+	;
+
+throwStatement
+	:	^( 'throw' expression )
+	;
+
+tryStatement
+	:	^( TRY try_block=block variable=NameLiteral catch_block=block ) 
+	;
+
+whileStatement
+	:	^( WHILE expression block )
+	;
+
+
+
 
