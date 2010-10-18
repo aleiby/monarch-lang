@@ -56,6 +56,7 @@ arrayLiteral
 	->	^( ARRAY expression? )
 	;
 
+// support for free standing blocks?  how to differentiate from object literals?  use anon funcs instead?
 block
 	:	'{' statements '}'
 	->	^( BLOCK statements )
@@ -229,10 +230,6 @@ namedExpression
 parameters
 	:	'(' ( NameLiteral ( ',' NameLiteral )* )? ')'
 	->	^( PARAMS NameLiteral* )
-	;
-
-prefixOperator
-	:	'typeof' | '+' | '-' | '!'
 	;
 
 returnStatement

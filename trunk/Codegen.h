@@ -18,11 +18,19 @@ extern "C" {
 	void TermCodegen();
 
 	LLVMValueRef CreateValue(const char* name);
-	LLVMValueRef LoadValue(LLVMValueRef v, const char* name);
+	LLVMValueRef LoadValue(LLVMValueRef v);
 	LLVMValueRef ConstInt(int value);
 	LLVMValueRef ConstString(const char* value, int length);
-	void PrintValue(LLVMValueRef v, const char * name);
-	void Assignment(LLVMValueRef lhs, LLVMValueRef rhs);
+	LLVMValueRef NegateValue(LLVMValueRef v);
+	LLVMValueRef InvertValue(LLVMValueRef v);
+	LLVMValueRef DeleteValue(LLVMValueRef v);
+	LLVMValueRef PrintValue(LLVMValueRef v);
+	LLVMValueRef Assignment(LLVMValueRef lhs, LLVMValueRef rhs);
+	LLVMValueRef AddValues(LLVMValueRef lhs, LLVMValueRef rhs);
+	LLVMValueRef SubValues(LLVMValueRef lhs, LLVMValueRef rhs);	
+	LLVMValueRef MulValues(LLVMValueRef lhs, LLVMValueRef rhs);	
+	LLVMValueRef DivValues(LLVMValueRef lhs, LLVMValueRef rhs);	
+	LLVMValueRef ModValues(LLVMValueRef lhs, LLVMValueRef rhs);	
 
 #ifdef __cplusplus
 }
