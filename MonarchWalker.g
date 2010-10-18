@@ -27,7 +27,7 @@ scope Symbols
 		for (int i = (int)SCOPE_SIZE(Symbols) - 1; i >= 0; i--)
 		{
 			SCOPE_TYPE(Symbols) symbols = (SCOPE_TYPE(Symbols))SCOPE_INSTANCE(Symbols, i);
-			void* symbol = symbols->table->get(symbols->table, name);
+			void* symbol = symbols->table->get(symbols->table, name->chars);
 			if (symbol)
 				return (LLVMValueRef)symbol;
 		}
@@ -38,7 +38,7 @@ scope Symbols
 		for (int i = (int)SCOPE_SIZE(Symbols) - 1; i >= 0; i--)
 		{
 			SCOPE_TYPE(Symbols) symbols = (SCOPE_TYPE(Symbols))SCOPE_INSTANCE(Symbols, i);
-			if (symbols->table->get(symbols->table, name))
+			if (symbols->table->get(symbols->table, name->chars))
 				return ANTLR3_TRUE;
 		}
 		return ANTLR3_FALSE;
@@ -49,7 +49,7 @@ scope Symbols
 		{
 			LLVMValueRef value = CreateValue((const char *)name->chars);
 			SCOPE_TYPE(Symbols) symbols = SCOPE_TOP(Symbols);
-			symbols->table->put(symbols->table, name, value, VariableDelete);
+			symbols->table->put(symbols->table, name->chars, value, VariableDelete);
 		}
 	}
 	void ANTLR3_CDECL freeTable(SCOPE_TYPE(Symbols) symbols)
@@ -78,6 +78,7 @@ arrayLiteral returns [LLVMValueRef value]
 	;
 
 block
+scope Symbols; // specify at higher levels instead?
 	:	^( BLOCK statements )
 	;
 
@@ -96,6 +97,7 @@ disruptiveStatement
 	//	what about continue?
 	;
 
+// do we allow expression to access block scope?
 doStatement
 	:	^( DO_WHILE expression block )
 	;
@@ -115,74 +117,70 @@ constant_expression
 
 assignment_expression returns [LLVMValueRef value]
 options {backtrack=true;}
-	:	^( '='  lvalue r=primary_expression ) { Assignment($lvalue.value, $r.value); }
-	|	^( '+=' lvalue r=primary_expression )
-	|	^( '-=' lvalue r=primary_expression )
-	|	^( '*=' lvalue r=primary_expression )
-	|	^( '/=' lvalue r=primary_expression )
-	|	conditional_expression
+	:	^( '='  lvalue r=assignment_expression ) { $value = Assignment($lvalue.value, $r.value); }
+	|	^( '+=' lvalue r=assignment_expression ) { LLVMValueRef tmp = AddValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '-=' lvalue r=assignment_expression ) { LLVMValueRef tmp = SubValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '*=' lvalue r=assignment_expression ) { LLVMValueRef tmp = MulValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '/=' lvalue r=assignment_expression ) { LLVMValueRef tmp = DivValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	conditional_expression { $value = $conditional_expression.value; }
 	;
 
 lvalue returns [LLVMValueRef value]
 	:	unary_expression { $value = $unary_expression.value; }
 	;
 
-conditional_expression
-	:	logical_or_expression
-		(	^( '?' expression conditional_expression ) )?
+conditional_expression returns [LLVMValueRef value]
+	:	logical_or_expression { $value = $logical_or_expression.value; }
+	|	^( '?' logical_or_expression expression conditional_expression )
 	;
 
-logical_or_expression
-	:	logical_and_expression
-		(	^( '||' logical_and_expression ) )*
+logical_or_expression returns [LLVMValueRef value]
+	:	logical_and_expression { $value = $logical_and_expression.value; }
+	|	^( '||' lhs=logical_or_expression rhs=logical_and_expression )
 	;
 
-logical_and_expression
-	:	equality_expression
-		(	^( '&&' equality_expression ) )*
+logical_and_expression returns [LLVMValueRef value]
+	:	equality_expression { $value = $equality_expression.value; }
+	|	^( '&&' lhs=logical_and_expression rhs=equality_expression )
 	;
 
-equality_expression
-	:	relational_expression
-		(	^( '==' relational_expression )
-		|	^( '!=' relational_expression )
-		)*
+equality_expression returns [LLVMValueRef value]
+	:	relational_expression { $value = $relational_expression.value; }
+	|	^( '==' lhs=equality_expression rhs=relational_expression )
+	|	^( '!=' lhs=equality_expression rhs=relational_expression )
 	;
 
-relational_expression
-	:	additive_expression
-		(	^( '<'  additive_expression )
-		|	^( '>'  additive_expression )
-		|	^( '<=' additive_expression )
-		|	^( '>=' additive_expression )
-		)*
+relational_expression returns [LLVMValueRef value]
+	:	additive_expression { $value = $additive_expression.value; }
+	|	^( '<'  lhs=relational_expression rhs=additive_expression )
+	|	^( '>'  lhs=relational_expression rhs=additive_expression )
+	|	^( '<=' lhs=relational_expression rhs=additive_expression )
+	|	^( '>=' lhs=relational_expression rhs=additive_expression )
 	;
 
-additive_expression
-	:	multiplicative_expression
-		(	^( '+' multiplicative_expression )
-		|	^( '-' multiplicative_expression )
-		)*
+additive_expression returns [LLVMValueRef value]
+	:	multiplicative_expression { $value = $multiplicative_expression.value; }
+	|	^( '+' lhs=additive_expression rhs=multiplicative_expression ) { $value = AddValues($lhs.value, $rhs.value); }
+	|	^( '-' lhs=additive_expression rhs=multiplicative_expression ) { $value = SubValues($lhs.value, $rhs.value); }
 	;
 
-multiplicative_expression
-	:	unary_expression
-		(	^( '*' unary_expression )
-		|	^( '/' unary_expression )
-		|	^( '%' unary_expression )
-		)*
+multiplicative_expression returns [LLVMValueRef value]
+	:	unary_expression { $value = $unary_expression.value; }
+	|	^( '*' lhs=multiplicative_expression rhs=unary_expression ) { $value = MulValues($lhs.value, $rhs.value);  }
+	|	^( '/' lhs=multiplicative_expression rhs=unary_expression ) { $value = DivValues($lhs.value, $rhs.value);  }
+	|	^( '%' lhs=multiplicative_expression rhs=unary_expression ) { $value = ModValues($lhs.value, $rhs.value);  }
 	;
 
 unary_expression returns [LLVMValueRef value]
 	:	postfix_expression			{ $value = $postfix_expression.value; }
-	|	'++' unary_expression
-	|	'--' unary_expression
-	|	'+'  unary_expression
-	|	'-'  unary_expression
-	|	'!'  unary_expression
-	|	'typeof' unary_expression
-	|	'delete' unary_expression
-	|	'print' r=unary_expression	{ PrintValue($r.value, ""); }
+	|	'++' r=unary_expression
+	|	'--' r=unary_expression
+	|	'+'  r=unary_expression		{ $value = $r.value; }
+	|	'-'  r=unary_expression		{ $value = NegateValue($r.value); }
+	|	'!'  r=unary_expression		{ $value = InvertValue($r.value); }
+	|	'typeof' r=unary_expression
+	|	'delete' r=unary_expression	{ $value = DeleteValue($r.value); }
+	|	'print' r=unary_expression	{ $value = PrintValue($r.value); }
 	;
 
 postfix_expression returns [LLVMValueRef value]
@@ -251,10 +249,6 @@ namedExpression
 
 parameters
 	:	^( PARAMS NameLiteral* )
-	;
-
-prefixOperator
-	:	'typeof' | '+' | '-' | '!'
 	;
 
 returnStatement

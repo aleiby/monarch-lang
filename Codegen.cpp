@@ -50,6 +50,9 @@ void TermCodegen()
 {
 	LLVMBuildRetVoid(builder);
 	
+	fprintf(stdout, "\n=before=\n");
+	LLVMDumpModule(module);
+	
 	char *error = NULL;
 	LLVMVerifyModule(module, LLVMAbortProcessAction, &error);
 	LLVMDisposeMessage(error); // Handler == LLVMAbortProcessAction -> No need to check errors
@@ -65,15 +68,18 @@ void TermCodegen()
 	
 	LLVMPassManagerRef pass = LLVMCreatePassManager();
 	LLVMAddTargetData(LLVMGetExecutionEngineTargetData(engine), pass);
-	//LLVMAddConstantPropagationPass(pass);
-	//LLVMAddInstructionCombiningPass(pass);
-	//LLVMAddPromoteMemoryToRegisterPass(pass);
-	//LLVMAddReassociatePass(pass);
-	//LLVMAddGVNPass(pass);
-	//LLVMAddCFGSimplificationPass(pass);
+	LLVMAddConstantPropagationPass(pass);
+	LLVMAddInstructionCombiningPass(pass);
+	LLVMAddPromoteMemoryToRegisterPass(pass);
+	LLVMAddReassociatePass(pass);
+	LLVMAddGVNPass(pass);
+	LLVMAddCFGSimplificationPass(pass);
 	LLVMRunPassManager(pass, module);
+
+	fprintf(stdout, "\n=after=\n");
 	LLVMDumpModule(module);
 	
+	fprintf(stdout, "\n=output=\n");
 	LLVMRunFunction(engine, top_function, 0, NULL);
 	
 	LLVMDisposePassManager(pass);
@@ -87,9 +93,9 @@ LLVMValueRef CreateValue(const char* name)
 	return LLVMBuildAlloca(builder, LLVMInt32Type(), name);
 }
 
-LLVMValueRef LoadValue(LLVMValueRef v, const char* name)
+LLVMValueRef LoadValue(LLVMValueRef v)
 {
-	return LLVMBuildLoad(builder, v, name);
+	return LLVMBuildLoad(builder, v, "");
 }
 
 LLVMValueRef ConstInt(int value)
@@ -102,14 +108,55 @@ LLVMValueRef ConstString(const char* value, int length)
 	return LLVMConstString(value, length, false);
 }
 
-void PrintValue(LLVMValueRef v, const char * name)
+LLVMValueRef NegateValue(LLVMValueRef v)
 {
-	v = LLVMBuildLoad(builder, v, name);
-	LLVMValueRef args[] = { v };
-	LLVMBuildCall(builder, printn, args, 1, "");
+	return v; //!!
 }
 
-void Assignment(LLVMValueRef lhs, LLVMValueRef rhs)
+LLVMValueRef InvertValue(LLVMValueRef v)
+{
+	return v; //!!
+}
+
+LLVMValueRef DeleteValue(LLVMValueRef v)
+{
+	return ConstInt(0); //!!
+}
+
+LLVMValueRef PrintValue(LLVMValueRef v)
+{
+	v = LLVMBuildLoad(builder, v, "");
+	LLVMValueRef args[] = { v };
+	return LLVMBuildCall(builder, printn, args, 1, "");
+}
+
+LLVMValueRef Assignment(LLVMValueRef lhs, LLVMValueRef rhs)
 {
 	LLVMBuildStore(builder, rhs, lhs);
+	return LoadValue(lhs);
+}
+
+LLVMValueRef AddValues(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildAdd(builder, lhs, rhs, "");
+}
+
+LLVMValueRef SubValues(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildSub(builder, lhs, rhs, "");
+}
+
+LLVMValueRef MulValues(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildMul(builder, lhs, rhs, "");
+}
+
+LLVMValueRef DivValues(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildSDiv(builder, lhs, rhs, "");
+}
+
+LLVMValueRef ModValues(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildSRem(builder, lhs, rhs, "");
 }

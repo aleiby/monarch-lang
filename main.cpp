@@ -7,9 +7,9 @@
 #include "MonarchWalker.h"
 
 extern "C" 
-void printn(ANTLR3_INT32 X)
+int printn(ANTLR3_INT32 X)
 {
-	printf("%d\n", X);
+	return printf("%d\n", X);
 }
 
 int ANTLR3_CDECL
