@@ -10,3 +10,17 @@ print x;
 print y;
 */
 
+//x = 1 + 2 * 3 + 1;
+//print x;
+
+x = 11;
+if ( x < 10 )
+{
+	x = 0;
+}
+/*else
+{
+	x = 20;
+}*/
+
+print x;

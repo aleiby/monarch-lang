@@ -125,7 +125,6 @@ LLVMValueRef DeleteValue(LLVMValueRef v)
 
 LLVMValueRef PrintValue(LLVMValueRef v)
 {
-	v = LLVMBuildLoad(builder, v, "");
 	LLVMValueRef args[] = { v };
 	return LLVMBuildCall(builder, printn, args, 1, "");
 }
@@ -160,3 +159,73 @@ LLVMValueRef ModValues(LLVMValueRef lhs, LLVMValueRef rhs)
 {
 	return LLVMBuildSRem(builder, lhs, rhs, "");
 }
+
+LLVMValueRef LogicAnd(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildAnd(builder, lhs, rhs, "");
+}
+
+LLVMValueRef LogicOr(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildOr(builder, lhs, rhs, "");
+}
+
+LLVMValueRef CmpEQ(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildICmp(builder, LLVMIntEQ, lhs, rhs, "");
+}
+
+LLVMValueRef CmpNE(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildICmp(builder, LLVMIntNE, lhs, rhs, "");
+}
+
+LLVMValueRef CmpLT(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildICmp(builder, LLVMIntSLT, lhs, rhs, "");
+}
+
+LLVMValueRef CmpGT(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildICmp(builder, LLVMIntSGT, lhs, rhs, "");
+}
+
+LLVMValueRef CmpLE(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildICmp(builder, LLVMIntSLE, lhs, rhs, "");
+}
+
+LLVMValueRef CmpGE(LLVMValueRef lhs, LLVMValueRef rhs)
+{
+	return LLVMBuildICmp(builder, LLVMIntSGE, lhs, rhs, "");
+}
+
+LLVMBasicBlockRef CreateBlock(const char* name)
+{
+	LLVMBasicBlockRef block = LLVMAppendBasicBlock(top_function, name);
+	LLVMPositionBuilderAtEnd(builder, block);
+	return block;
+}
+
+void Branch(LLVMValueRef cond, LLVMBasicBlockRef iftrue, LLVMBasicBlockRef iffalse)
+{
+	LLVMBasicBlockRef endif = LLVMAppendBasicBlock(top_function, "endif");
+	
+	LLVMBasicBlockRef block = LLVMGetPreviousBasicBlock(iftrue);
+	LLVMPositionBuilderAtEnd(builder, block);
+	
+	//!!ARL: Assumes cond is a bool already (need type coersion).
+	LLVMBuildCondBr(builder, cond, iftrue, iffalse ? iffalse : endif);
+	
+	LLVMPositionBuilderAtEnd(builder, iftrue);
+	LLVMBuildBr(builder, endif);
+	
+	if (iffalse)
+	{
+		LLVMPositionBuilderAtEnd(builder, iffalse);
+		LLVMBuildBr(builder, endif);
+	}
+	
+	LLVMPositionBuilderAtEnd(builder, endif);
+}
+
