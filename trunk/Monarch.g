@@ -189,7 +189,7 @@ forStatement
 // should parameters be optional as well?
 functionLiteral
 	:	'function' name=NameLiteral? args=parameters body=block
-	->	^( FUNC $args $body $name? )
+	->	^( FUNC $name? $args $body )
 	;
 
 // what about elseif?

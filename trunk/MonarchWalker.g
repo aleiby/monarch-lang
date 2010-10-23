@@ -77,8 +77,14 @@ arrayLiteral returns [LLVMValueRef value]
 	:	^( ARRAY expression? )
 	;
 
-block
+block[const char* name] returns [LLVMBasicBlockRef ref]
 scope Symbols; // specify at higher levels instead?
+@init
+{
+	$Symbols::table = antlr3HashTableNew(11);
+	SCOPE_TOP(Symbols)->free = freeTable;
+	$ref = CreateBlock(name);
+}
 	:	^( BLOCK statements )
 	;
 
@@ -99,7 +105,7 @@ disruptiveStatement
 
 // do we allow expression to access block scope?
 doStatement
-	:	^( DO_WHILE expression block )
+	:	^( DO_WHILE expression block["do"] )
 	;
 
 expressionStatement
@@ -118,15 +124,15 @@ constant_expression
 assignment_expression returns [LLVMValueRef value]
 options {backtrack=true;}
 	:	^( '='  lvalue r=assignment_expression ) { $value = Assignment($lvalue.value, $r.value); }
-	|	^( '+=' lvalue r=assignment_expression ) { LLVMValueRef tmp = AddValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
-	|	^( '-=' lvalue r=assignment_expression ) { LLVMValueRef tmp = SubValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
-	|	^( '*=' lvalue r=assignment_expression ) { LLVMValueRef tmp = MulValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
-	|	^( '/=' lvalue r=assignment_expression ) { LLVMValueRef tmp = DivValues(LoadValue($lvalue.value), $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '+=' lvalue r=assignment_expression ) { LLVMValueRef tmp = AddValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '-=' lvalue r=assignment_expression ) { LLVMValueRef tmp = SubValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '*=' lvalue r=assignment_expression ) { LLVMValueRef tmp = MulValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '/=' lvalue r=assignment_expression ) { LLVMValueRef tmp = DivValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
 	|	conditional_expression { $value = $conditional_expression.value; }
 	;
 
 lvalue returns [LLVMValueRef value]
-	:	unary_expression { $value = $unary_expression.value; }
+	:	unary_expression[ANTLR3_TRUE] { $value = $unary_expression.value; }
 	;
 
 conditional_expression returns [LLVMValueRef value]
@@ -136,26 +142,26 @@ conditional_expression returns [LLVMValueRef value]
 
 logical_or_expression returns [LLVMValueRef value]
 	:	logical_and_expression { $value = $logical_and_expression.value; }
-	|	^( '||' lhs=logical_or_expression rhs=logical_and_expression )
+	|	^( '||' lhs=logical_or_expression rhs=logical_and_expression ) { $value = LogicOr($lhs.value, $rhs.value); }
 	;
 
 logical_and_expression returns [LLVMValueRef value]
 	:	equality_expression { $value = $equality_expression.value; }
-	|	^( '&&' lhs=logical_and_expression rhs=equality_expression )
+	|	^( '&&' lhs=logical_and_expression rhs=equality_expression ) { $value = LogicAnd($lhs.value, $rhs.value); }
 	;
 
 equality_expression returns [LLVMValueRef value]
 	:	relational_expression { $value = $relational_expression.value; }
-	|	^( '==' lhs=equality_expression rhs=relational_expression )
-	|	^( '!=' lhs=equality_expression rhs=relational_expression )
+	|	^( '==' lhs=equality_expression rhs=relational_expression ) { $value = CmpEQ($lhs.value, $rhs.value); }
+	|	^( '!=' lhs=equality_expression rhs=relational_expression ) { $value = CmpNE($lhs.value, $rhs.value); }
 	;
 
 relational_expression returns [LLVMValueRef value]
 	:	additive_expression { $value = $additive_expression.value; }
-	|	^( '<'  lhs=relational_expression rhs=additive_expression )
-	|	^( '>'  lhs=relational_expression rhs=additive_expression )
-	|	^( '<=' lhs=relational_expression rhs=additive_expression )
-	|	^( '>=' lhs=relational_expression rhs=additive_expression )
+	|	^( '<'  lhs=relational_expression rhs=additive_expression ) { $value = CmpLT($lhs.value, $rhs.value); }
+	|	^( '>'  lhs=relational_expression rhs=additive_expression ) { $value = CmpGT($lhs.value, $rhs.value); }
+	|	^( '<=' lhs=relational_expression rhs=additive_expression ) { $value = CmpLE($lhs.value, $rhs.value); }
+	|	^( '>=' lhs=relational_expression rhs=additive_expression ) { $value = CmpGE($lhs.value, $rhs.value); }
 	;
 
 additive_expression returns [LLVMValueRef value]
@@ -165,38 +171,40 @@ additive_expression returns [LLVMValueRef value]
 	;
 
 multiplicative_expression returns [LLVMValueRef value]
-	:	unary_expression { $value = $unary_expression.value; }
-	|	^( '*' lhs=multiplicative_expression rhs=unary_expression ) { $value = MulValues($lhs.value, $rhs.value);  }
-	|	^( '/' lhs=multiplicative_expression rhs=unary_expression ) { $value = DivValues($lhs.value, $rhs.value);  }
-	|	^( '%' lhs=multiplicative_expression rhs=unary_expression ) { $value = ModValues($lhs.value, $rhs.value);  }
+	:	unary_expression[ANTLR3_FALSE] { $value = $unary_expression.value; }
+	|	^( '*' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ) { $value = MulValues($lhs.value, $rhs.value);  }
+	|	^( '/' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ) { $value = DivValues($lhs.value, $rhs.value);  }
+	|	^( '%' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ) { $value = ModValues($lhs.value, $rhs.value);  }
 	;
 
-unary_expression returns [LLVMValueRef value]
-	:	postfix_expression			{ $value = $postfix_expression.value; }
-	|	'++' r=unary_expression
-	|	'--' r=unary_expression
-	|	'+'  r=unary_expression		{ $value = $r.value; }
-	|	'-'  r=unary_expression		{ $value = NegateValue($r.value); }
-	|	'!'  r=unary_expression		{ $value = InvertValue($r.value); }
-	|	'typeof' r=unary_expression
-	|	'delete' r=unary_expression	{ $value = DeleteValue($r.value); }
-	|	'print' r=unary_expression	{ $value = PrintValue($r.value); }
+unary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
+	:	postfix_expression[$lvalue]					{ $value = $postfix_expression.value; }
+	|	'++' r=unary_expression[$lvalue]
+	|	'--' r=unary_expression[$lvalue]
+	|	'+'  r=unary_expression[ANTLR3_FALSE]		{ $value = $r.value; }
+	|	'-'  r=unary_expression[ANTLR3_FALSE]		{ $value = NegateValue($r.value); }
+	|	'!'  r=unary_expression[ANTLR3_FALSE]		{ $value = InvertValue($r.value); }
+	|	'typeof' r=unary_expression[ANTLR3_FALSE]
+	|	'delete' r=unary_expression[ANTLR3_FALSE]	{ $value = DeleteValue($r.value); }
+	|	'print' r=unary_expression[ANTLR3_FALSE]	{ $value = PrintValue($r.value); }
 	;
 
-postfix_expression returns [LLVMValueRef value]
-	:	primary_expression { $value = $primary_expression.value; }
-	|	^( INDX postfix_expression expression )
-	|	^( CALL postfix_expression expression? )
-	|	^( '.' postfix_expression NameLiteral )
-	|	^( POSTINC postfix_expression )
-	|	^( POSTDEC postfix_expression )
+postfix_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
+	:	primary_expression[$lvalue] { $value = $primary_expression.value; }
+	|	^( INDX postfix_expression[ANTLR3_FALSE] expression )
+	|	^( CALL postfix_expression[ANTLR3_FALSE] expression? )
+	|	^( '.' postfix_expression[ANTLR3_FALSE] NameLiteral )
+	|	^( POSTINC postfix_expression[ANTLR3_FALSE] )
+	|	^( POSTDEC postfix_expression[ANTLR3_FALSE] )
 	;
 
-primary_expression returns [LLVMValueRef value]
+primary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	:	NameLiteral
 		{
 			defineSymbol(ctx, $NameLiteral.text);
 			$value = getSymbol(ctx, $NameLiteral.text);
+			if (!$lvalue)
+				$value = LoadValue($value);
 		}
 	|	literal					{ $value = $literal.value; }
 	|	^( NESTED expression )	{ $value = $expression.value; }
@@ -209,17 +217,18 @@ forStatement
 			(	^( INCR increment=expressionStatement ) )?
 			(	^( VAR var=NameLiteral obj=expression ) )?
 		)
-		(	block
+		(	block["for"]
 		|	statement
 		)
 	;
 	
 functionLiteral returns [LLVMValueRef value]
-	:	^( FUNC args=parameters body=block name=NameLiteral? )
+	:	^( FUNC name=NameLiteral? args=parameters body=block[$name ? (const char *)$name.text->chars : ""] )
 	;
 
 ifStatement
-	:	^( COND expression if_block=block else_block=block? )
+	:	^( COND cond=expression if_block=block["iftrue"] else_block=block["iffalse"]? )
+			{ Branch($cond.value, $if_block.ref, $else_block.tree ? $else_block.ref : NULL); }
 	;
 
 literal returns [LLVMValueRef value]
@@ -287,11 +296,11 @@ throwStatement
 	;
 
 tryStatement
-	:	^( TRY try_block=block variable=NameLiteral catch_block=block ) 
+	:	^( TRY try_block=block["try"] variable=NameLiteral catch_block=block["catch"] ) 
 	;
 
 whileStatement
-	:	^( WHILE expression block )
+	:	^( WHILE expression block["while"] )
 	;
 
 
