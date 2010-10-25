@@ -89,7 +89,7 @@ void TermCodegen()
 
 LLVMValueRef CreateValue(const char* name)
 {
-	//!!ARL: Default value?
+	//!!ARL: Default value?  Also need to infer type.
 	return LLVMBuildAlloca(builder, LLVMInt32Type(), name);
 }
 
@@ -101,6 +101,11 @@ LLVMValueRef LoadValue(LLVMValueRef v)
 LLVMValueRef ConstInt(int value)
 {
 	return LLVMConstInt(LLVMInt32Type(), value, 0);
+}
+
+LLVMValueRef ConstBool(int value)
+{
+	return LLVMConstInt(LLVMInt1Type(), value, 0);
 }
 
 LLVMValueRef ConstString(const char* value, int length)
@@ -202,17 +207,23 @@ LLVMValueRef CmpGE(LLVMValueRef lhs, LLVMValueRef rhs)
 
 LLVMBasicBlockRef CreateBlock(const char* name)
 {
-	LLVMBasicBlockRef block = LLVMAppendBasicBlock(top_function, name);
-	LLVMPositionBuilderAtEnd(builder, block);
-	return block;
+	return LLVMAppendBasicBlock(top_function, name);
 }
 
-void Branch(LLVMValueRef cond, LLVMBasicBlockRef iftrue, LLVMBasicBlockRef iffalse)
+void BeginBlock(LLVMBasicBlockRef block)
 {
-	LLVMBasicBlockRef endif = LLVMAppendBasicBlock(top_function, "endif");
-	
+	LLVMPositionBuilderAtEnd(builder, block);
+}
+
+LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks)
+{
+	LLVMBasicBlockRef iftrue = blocks[0];
+	LLVMBasicBlockRef iffalse = blocks[1];
+
 	LLVMBasicBlockRef block = LLVMGetPreviousBasicBlock(iftrue);
 	LLVMPositionBuilderAtEnd(builder, block);
+	
+	LLVMBasicBlockRef endif = LLVMAppendBasicBlock(top_function, "endif");
 	
 	//!!ARL: Assumes cond is a bool already (need type coersion).
 	LLVMBuildCondBr(builder, cond, iftrue, iffalse ? iffalse : endif);
@@ -225,7 +236,16 @@ void Branch(LLVMValueRef cond, LLVMBasicBlockRef iftrue, LLVMBasicBlockRef iffal
 		LLVMPositionBuilderAtEnd(builder, iffalse);
 		LLVMBuildBr(builder, endif);
 	}
-	
+
 	LLVMPositionBuilderAtEnd(builder, endif);
+
+	if (results[0] && results[1])
+	{
+		LLVMValueRef result = LLVMBuildPhi(builder, LLVMInt32Type(), "result");  
+		LLVMAddIncoming(result, results, blocks, 2);  
+		return result;
+	}
+	
+	return results[0] ? results[0] : results[1];
 }
 
