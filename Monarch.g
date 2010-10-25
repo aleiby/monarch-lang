@@ -199,7 +199,8 @@ ifStatement
 	;
 
 literal
-	:	NumberLiteral
+	:	'true' | 'false' | 'null'
+	|	NumberLiteral
 	|	StringLiteral
 	|	objectLiteral
 	|	arrayLiteral

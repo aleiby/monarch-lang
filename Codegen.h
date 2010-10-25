@@ -21,6 +21,7 @@ extern "C" {
 	LLVMValueRef CreateValue(const char* name);
 	LLVMValueRef LoadValue(LLVMValueRef v);
 	LLVMValueRef ConstInt(int value);
+	LLVMValueRef ConstBool(int value);
 	LLVMValueRef ConstString(const char* value, int length);
 	LLVMValueRef NegateValue(LLVMValueRef v);
 	LLVMValueRef InvertValue(LLVMValueRef v);
@@ -44,7 +45,9 @@ extern "C" {
 	
 	LLVMBasicBlockRef CreateBlock(const char* name);
 	
-	void Branch(LLVMValueRef cond, LLVMBasicBlockRef iftrue, LLVMBasicBlockRef iffalse);
+	void BeginBlock(LLVMBasicBlockRef block);
+	
+	LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks);
 
 #ifdef __cplusplus
 }

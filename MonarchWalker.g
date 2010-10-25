@@ -77,15 +77,16 @@ arrayLiteral returns [LLVMValueRef value]
 	:	^( ARRAY expression? )
 	;
 
-block[const char* name] returns [LLVMBasicBlockRef ref]
+block[const char* name] returns [LLVMValueRef result, LLVMBasicBlockRef ref]
 scope Symbols; // specify at higher levels instead?
 @init
 {
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
 	$ref = CreateBlock(name);
+	BeginBlock($ref);
 }
-	:	^( BLOCK statements )
+	:	^( BLOCK r=statements ) { $result = $r.result; }
 	;
 
 breakStatement
@@ -136,8 +137,16 @@ lvalue returns [LLVMValueRef value]
 	;
 
 conditional_expression returns [LLVMValueRef value]
+@init
+{
+	LLVMValueRef results[] = { NULL, NULL };
+	LLVMBasicBlockRef blocks[] = { NULL, NULL };
+}
 	:	logical_or_expression { $value = $logical_or_expression.value; }
-	|	^( '?' logical_or_expression expression conditional_expression )
+	|	^( '?' cond=logical_or_expression
+			{ BeginBlock(blocks[0] = CreateBlock("iftrue")); } iftrue=expression { results[0]=$iftrue.value; }
+			{ BeginBlock(blocks[1] = CreateBlock("iffalse")); } iffalse=conditional_expression { results[1]=$iffalse.value; } )
+			{ $value = Branch($cond.value, results, blocks); }
 	;
 
 logical_or_expression returns [LLVMValueRef value]
@@ -227,8 +236,12 @@ functionLiteral returns [LLVMValueRef value]
 	;
 
 ifStatement
-	:	^( COND cond=expression if_block=block["iftrue"] else_block=block["iffalse"]? )
-			{ Branch($cond.value, $if_block.ref, $else_block.tree ? $else_block.ref : NULL); }
+	:	^( COND cond=expression iftrue=block["iftrue"] iffalse=block["iffalse"]? )
+		{
+			LLVMValueRef results[] = { $iftrue.result, $iffalse.tree ? $iffalse.result : NULL };
+			LLVMBasicBlockRef blocks[] = { $iftrue.ref, $iffalse.tree ? $iffalse.ref : NULL };
+			Branch($cond.value, results, blocks);
+		}
 	;
 
 literal returns [LLVMValueRef value]
@@ -242,6 +255,9 @@ literal returns [LLVMValueRef value]
 			pANTLR3_STRING s = $StringLiteral.text;
 			$value = ConstString((const char *)s->chars, s->len);
 		}
+	|	'true'			{ $value = ConstBool(1); }	//!!ARL: Add these to the global symbol table instead?
+	|	'false'			{ $value = ConstBool(0); }
+	|	'null'			{ $value = ConstInt(0); }
 	|	objectLiteral	{ $value = $objectLiteral.value; }
 	|	arrayLiteral	{ $value = $arrayLiteral.value; }
 	|	functionLiteral	{ $value = $functionLiteral.value; }
@@ -265,25 +281,25 @@ returnStatement
 	;
 
 // what about empty statements?
-statement
-	:	(	expressionStatement
-		|	disruptiveStatement
-		|	tryStatement
-		|	ifStatement
-		|	switchStatement
-		|	whileStatement
-		|	forStatement
-		|	doStatement
+statement returns [LLVMValueRef result]
+	:	(	expressionStatement { $result=NULL; }
+		|	disruptiveStatement	{ $result=NULL; }
+		|	tryStatement		{ $result=NULL; }
+		|	ifStatement			{ $result=NULL; }
+		|	switchStatement		{ $result=NULL; }
+		|	whileStatement		{ $result=NULL; }
+		|	forStatement		{ $result=NULL; }
+		|	doStatement			{ $result=NULL; }
 		)
 	;
 
-labeledStatement
-	:	^( STAT statement
+labeledStatement returns [LLVMValueRef result]
+	:	^( STAT r=statement { $result=$r.result; }
 			(	^( LABEL NameLiteral ) )? )
 	;
 
-statements
-	:	labeledStatement*
+statements returns [LLVMValueRef result]
+	:	r=labeledStatement* { $result=$r.result; }
 	;
 
 switchStatement
@@ -296,13 +312,10 @@ throwStatement
 	;
 
 tryStatement
-	:	^( TRY try_block=block["try"] variable=NameLiteral catch_block=block["catch"] ) 
+	:	^( TRY block["try"] NameLiteral block["catch"] ) 
 	;
 
 whileStatement
 	:	^( WHILE expression block["while"] )
 	;
-
-
-
 
