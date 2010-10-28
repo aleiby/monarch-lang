@@ -79,7 +79,7 @@ disruptiveStatement
 
 doStatement
 	:	'do' block 'while' '(' expression ')' ';'
-	->	^( DO_WHILE expression block )
+	->	^( DO_WHILE block expression )
 	;
 
 expressionStatement

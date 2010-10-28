@@ -106,7 +106,7 @@ disruptiveStatement
 
 // do we allow expression to access block scope?
 doStatement
-	:	^( DO_WHILE expression block["do"] )
+	:	^( DO_WHILE block["do"] cond=expression ) { DoWhile($cond.value, $block.ref); }
 	;
 
 expressionStatement
@@ -188,8 +188,8 @@ multiplicative_expression returns [LLVMValueRef value]
 
 unary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	:	postfix_expression[$lvalue]					{ $value = $postfix_expression.value; }
-	|	'++' r=unary_expression[$lvalue]
-	|	'--' r=unary_expression[$lvalue]
+	|	'++' r=unary_expression[ANTLR3_TRUE]		{ $value = IncrementValue($r.value); }
+	|	'--' r=unary_expression[ANTLR3_TRUE]		{ $value = DecrementValue($r.value); }
 	|	'+'  r=unary_expression[ANTLR3_FALSE]		{ $value = $r.value; }
 	|	'-'  r=unary_expression[ANTLR3_FALSE]		{ $value = NegateValue($r.value); }
 	|	'!'  r=unary_expression[ANTLR3_FALSE]		{ $value = InvertValue($r.value); }
@@ -220,6 +220,12 @@ primary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	;
 
 forStatement
+scope Symbols;
+@init
+{
+	$Symbols::table = antlr3HashTableNew(11);
+	SCOPE_TOP(Symbols)->free = freeTable;
+}
 	:	^( 'for'
 			(	^( INIT initialization=expressionStatement ) )?
 			(	^( COND condition=expression ) )?

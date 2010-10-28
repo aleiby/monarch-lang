@@ -57,6 +57,8 @@ void TermCodegen()
 	LLVMVerifyModule(module, LLVMAbortProcessAction, &error);
 	LLVMDisposeMessage(error); // Handler == LLVMAbortProcessAction -> No need to check errors
 	
+	//LLVMViewFunctionCFG(top_function);
+	
 	LLVMExecutionEngineRef engine;
 	LLVMModuleProviderRef provider = LLVMCreateModuleProviderForExistingModule(module);
 	error = NULL;
@@ -111,6 +113,17 @@ LLVMValueRef ConstBool(int value)
 LLVMValueRef ConstString(const char* value, int length)
 {
 	return LLVMConstString(value, length, false);
+}
+
+LLVMValueRef IncrementValue(LLVMValueRef v)
+{
+	//!!ARL: Is there a separate increment operation?
+	return Assignment(v, AddValues(LoadValue(v), ConstInt(1)));
+}
+
+LLVMValueRef DecrementValue(LLVMValueRef v)
+{
+	return Assignment(v, SubValues(LoadValue(v), ConstInt(1)));
 }
 
 LLVMValueRef NegateValue(LLVMValueRef v)
@@ -248,4 +261,21 @@ LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef*
 	
 	return results[0] ? results[0] : results[1];
 }
+
+void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block)
+{
+	// insert a branch to our block
+	LLVMBasicBlockRef prev_block = LLVMGetPreviousBasicBlock(block);
+	LLVMPositionBuilderAtEnd(builder, prev_block);
+	LLVMBuildBr(builder, block);
+	
+	// tack on an end block to branch to when the condition fails		
+	LLVMBasicBlockRef enddo = LLVMAppendBasicBlock(top_function, "enddo");
+	LLVMPositionBuilderAtEnd(builder, block);
+	
+	//!!ARL: Assumes cond is a bool already (need type coersion).
+	LLVMBuildCondBr(builder, cond, block, enddo);
+	LLVMPositionBuilderAtEnd(builder, enddo);
+}
+
 
