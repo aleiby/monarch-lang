@@ -23,6 +23,8 @@ extern "C" {
 	LLVMValueRef ConstInt(int value);
 	LLVMValueRef ConstBool(int value);
 	LLVMValueRef ConstString(const char* value, int length);
+	LLVMValueRef IncrementValue(LLVMValueRef v);
+	LLVMValueRef DecrementValue(LLVMValueRef v);
 	LLVMValueRef NegateValue(LLVMValueRef v);
 	LLVMValueRef InvertValue(LLVMValueRef v);
 	LLVMValueRef DeleteValue(LLVMValueRef v);
@@ -48,6 +50,7 @@ extern "C" {
 	void BeginBlock(LLVMBasicBlockRef block);
 	
 	LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks);
+	void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block);
 
 #ifdef __cplusplus
 }

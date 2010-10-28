@@ -13,17 +13,22 @@ print y;
 //x = 1 + 2 * 3 + 1;
 //print x;
 
+/*
 x = 11;
 if ( x < 10 )
 {
 	x = 0;
 }
-/*else
+else
 {
 	x = 20;
-}*/
+}
+*/
 
-//x = false ? 10 : 20;
+x = true ? 10 : 20;
+
+do { --x; }
+while (x > 5);
 
 print x;
 
