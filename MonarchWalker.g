@@ -104,7 +104,7 @@ disruptiveStatement
 	//	what about continue?
 	;
 
-// do we allow expression to access block scope?
+//!!ARL: I'm tempted to leave this out entirely.
 doStatement
 	:	^( DO_WHILE block["do"] cond=expression ) { DoWhile($cond.value, $block.ref); }
 	;
@@ -322,6 +322,11 @@ tryStatement
 	;
 
 whileStatement
-	:	^( WHILE expression block["while"] )
+@init
+{
+	LLVMBasicBlockRef cond_block = CreateBlock("while_cond");
+	BeginBlock(cond_block);
+}
+	:	^( WHILE cond=expression block["while_loop"] ) { While($cond.value, cond_block, $block.ref); }
 	;
 

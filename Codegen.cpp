@@ -278,4 +278,25 @@ void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block)
 	LLVMPositionBuilderAtEnd(builder, enddo);
 }
 
+void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef block)
+{
+	// insert a branch to the condition block
+	LLVMBasicBlockRef prev_block = LLVMGetPreviousBasicBlock(cond_block);
+	LLVMPositionBuilderAtEnd(builder, prev_block);
+	LLVMBuildBr(builder, cond_block);
+	
+	// tack on an end block to branch to when the condition fails		
+	LLVMBasicBlockRef endwhile = LLVMAppendBasicBlock(top_function, "endwhile");
+	
+	// evaluate condition to decide to execute block or exit
+	LLVMPositionBuilderAtEnd(builder, cond_block);
+	//!!ARL: Assumes cond is a bool already (need type coersion).
+	LLVMBuildCondBr(builder, cond, block, endwhile);
+	
+	// loop back to evaluate condition at end of block
+	LLVMPositionBuilderAtEnd(builder, block);
+	LLVMBuildBr(builder, cond_block);
+	
+	LLVMPositionBuilderAtEnd(builder, endwhile);
+}
 
