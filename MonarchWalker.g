@@ -225,16 +225,22 @@ scope Symbols;
 {
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
+	LLVMBasicBlockRef blocks[] = {
+		CreateBlock("for_init"),
+		CreateBlock("for_cond"),
+		CreateBlock("for_incr"),
+		NULL // for_loop
+	};
 }
 	:	^( 'for'
-			(	^( INIT initialization=expressionStatement ) )?
-			(	^( COND condition=expression ) )?
-			(	^( INCR increment=expressionStatement ) )?
-			(	^( VAR var=NameLiteral obj=expression ) )?
-		)
-		(	block["for"]
-		|	statement
-		)
+			(	{ BeginBlock(blocks[0]); } ^( INIT expressionStatement ) )?
+			(	{ BeginBlock(blocks[1]); } ^( COND cond=expression ) )?
+			(	{ BeginBlock(blocks[2]); } ^( INCR expressionStatement ) )?
+//			(	^( VAR var=NameLiteral obj=expression ) )?
+			(	block["for_loop"] { blocks[3]=$block.ref; }
+			|	{ blocks[3]=CreateBlock("for_loop"); BeginBlock(blocks[3]); } ^( STAT statement )
+			)
+		)	{ ForLoop($cond.tree ? $cond.value : NULL, blocks); }
 	;
 	
 functionLiteral returns [LLVMValueRef value]

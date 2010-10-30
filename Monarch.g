@@ -182,7 +182,7 @@ forStatement
 	|	var=NameLiteral 'in' obj=expression		-> ^( VAR $var $obj )
 	)	')'
 	(	('{')=> block							-> ^( 'for' $forStatement block )
-	|	statement								-> ^( 'for' $forStatement statement )
+	|	statement								-> ^( 'for' $forStatement ^( STAT statement ) ) // statement not labeled
 	)
 	;
 
