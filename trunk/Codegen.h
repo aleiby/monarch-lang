@@ -51,6 +51,7 @@ extern "C" {
 	
 	LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks);
 	void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block);
+	void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef block);
 
 #ifdef __cplusplus
 }
