@@ -46,12 +46,12 @@ extern "C" {
 	LLVMValueRef CmpGE(LLVMValueRef lhs, LLVMValueRef rhs);
 	
 	LLVMBasicBlockRef CreateBlock(const char* name);
-	
 	void BeginBlock(LLVMBasicBlockRef block);
 	
 	LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks);
 	void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block);
 	void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef block);
+	void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks);
 
 #ifdef __cplusplus
 }

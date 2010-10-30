@@ -300,3 +300,38 @@ void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef bl
 	LLVMPositionBuilderAtEnd(builder, endwhile);
 }
 
+void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks)
+{
+	LLVMBasicBlockRef init_block = blocks[0];
+	LLVMBasicBlockRef cond_block = blocks[1];
+	LLVMBasicBlockRef incr_block = blocks[2];
+	LLVMBasicBlockRef loop_block = blocks[3];
+	
+	// branch to our init block
+	LLVMBasicBlockRef prev_block = LLVMGetPreviousBasicBlock(init_block);
+	LLVMPositionBuilderAtEnd(builder, prev_block);
+	LLVMBuildBr(builder, init_block);
+	
+	// chain init block to cond block
+	LLVMPositionBuilderAtEnd(builder, init_block);
+	LLVMBuildBr(builder, cond_block);
+	
+	// tack on an end block to branch to when the condition fails		
+	LLVMBasicBlockRef endfor = LLVMAppendBasicBlock(top_function, "endfor");
+	
+	// evaluate condition to decide to execute loop block or exit
+	LLVMPositionBuilderAtEnd(builder, cond_block);
+	//!!ARL: Assumes cond is a bool already (need type coersion).
+	LLVMBuildCondBr(builder, cond, loop_block, endfor);
+	
+	// chain loop block to increment block
+	LLVMPositionBuilderAtEnd(builder, loop_block);
+	LLVMBuildBr(builder, incr_block);
+	
+	// chain increment block to condition block
+	LLVMPositionBuilderAtEnd(builder, incr_block);
+	LLVMBuildBr(builder, cond_block);
+	
+	LLVMPositionBuilderAtEnd(builder, endfor);
+}
+
