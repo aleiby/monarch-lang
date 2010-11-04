@@ -33,5 +33,13 @@ else
 //while (x > 5) { --x; }
 
 for (x = 0; x < 10; ++x)
+{
 	print x;
+	
+	if (x == 5)
+	{
+		break;
+	}
+}
 
+// - need support for single statement if

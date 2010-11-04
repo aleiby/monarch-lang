@@ -40,9 +40,6 @@ void InitCodegen()
 		top_function = LLVMAddFunction(module, "", type);
 		LLVMSetFunctionCallConv(top_function, LLVMCCallConv); //!!ARL: Necessary?
 		LLVMSetLinkage(top_function, LLVMExternalLinkage);
-		
-		LLVMBasicBlockRef entry = LLVMAppendBasicBlock(top_function, "entry");
-		LLVMPositionBuilderAtEnd(builder, entry);
 	}
 }
 
@@ -77,6 +74,8 @@ void TermCodegen()
 	LLVMAddGVNPass(pass);
 	LLVMAddCFGSimplificationPass(pass);
 	LLVMRunPassManager(pass, module);
+	
+	//LLVMViewFunctionCFG(top_function);
 
 	fprintf(stdout, "\n=after=\n");
 	LLVMDumpModule(module);
@@ -228,37 +227,40 @@ void BeginBlock(LLVMBasicBlockRef block)
 	LLVMPositionBuilderAtEnd(builder, block);
 }
 
+void LinkTo(LLVMBasicBlockRef block)
+{
+	LLVMBuildBr(builder, block);
+	LLVMPositionBuilderAtEnd(builder, block);
+}
+
 LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks)
 {
 	LLVMBasicBlockRef iftrue = blocks[0];
 	LLVMBasicBlockRef iffalse = blocks[1];
-
-	LLVMBasicBlockRef block = LLVMGetPreviousBasicBlock(iftrue);
-	LLVMPositionBuilderAtEnd(builder, block);
+	LLVMBasicBlockRef endif = blocks[2];
 	
-	LLVMBasicBlockRef endif = LLVMAppendBasicBlock(top_function, "endif");
+	// move endif to the end of the function so far
+	LLVMMoveBasicBlockAfter(endif, LLVMGetLastBasicBlock(top_function));
+	
+	// insert our conditional branch just ahead of the iftrue block
+	LLVMBasicBlockRef prev = LLVMGetPreviousBasicBlock(iftrue);
+	LLVMPositionBuilderAtEnd(builder, prev);
 	
 	//!!ARL: Assumes cond is a bool already (need type coersion).
 	LLVMBuildCondBr(builder, cond, iftrue, iffalse ? iffalse : endif);
 	
-	LLVMPositionBuilderAtEnd(builder, iftrue);
-	LLVMBuildBr(builder, endif);
-	
-	if (iffalse)
-	{
-		LLVMPositionBuilderAtEnd(builder, iffalse);
-		LLVMBuildBr(builder, endif);
-	}
-
+	// finish off return var at end of if/then/else statement
 	LLVMPositionBuilderAtEnd(builder, endif);
-
+	
+	// if we have two results, build a phi node to join them
 	if (results[0] && results[1])
 	{
 		LLVMValueRef result = LLVMBuildPhi(builder, LLVMInt32Type(), "result");  
-		LLVMAddIncoming(result, results, blocks, 2);  
+		LLVMAddIncoming(result, results, blocks, 2);
 		return result;
 	}
 	
+	// otherwise, return whichever is non-null (if any).
 	return results[0] ? results[0] : results[1];
 }
 
@@ -300,7 +302,7 @@ void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef bl
 	LLVMPositionBuilderAtEnd(builder, endwhile);
 }
 
-void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks)
+void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks, LLVMBasicBlockRef end)
 {
 	LLVMBasicBlockRef init_block = blocks[0];
 	LLVMBasicBlockRef cond_block = blocks[1];
@@ -316,22 +318,51 @@ void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks)
 	LLVMPositionBuilderAtEnd(builder, init_block);
 	LLVMBuildBr(builder, cond_block);
 	
-	// tack on an end block to branch to when the condition fails		
-	LLVMBasicBlockRef endfor = LLVMAppendBasicBlock(top_function, "endfor");
-	
 	// evaluate condition to decide to execute loop block or exit
 	LLVMPositionBuilderAtEnd(builder, cond_block);
-	//!!ARL: Assumes cond is a bool already (need type coersion).
-	LLVMBuildCondBr(builder, cond, loop_block, endfor);
+	if (cond)
+	{
+		//!!ARL: Assumes cond is a bool already (need type coersion).
+		LLVMBuildCondBr(builder, cond, loop_block, end);
+	}
+	else
+	{
+		// unconditional - continue loop until disrupted
+		LLVMBuildBr(builder, loop_block);
+	}
 	
-	// chain loop block to increment block
-	LLVMPositionBuilderAtEnd(builder, loop_block);
+	// chain last block back to increment block
+	LLVMBasicBlockRef last = LLVMGetLastBasicBlock(top_function);
+	LLVMPositionBuilderAtEnd(builder, last);
 	LLVMBuildBr(builder, incr_block);
 	
 	// chain increment block to condition block
 	LLVMPositionBuilderAtEnd(builder, incr_block);
 	LLVMBuildBr(builder, cond_block);
 	
-	LLVMPositionBuilderAtEnd(builder, endfor);
+	// move end block to end of function where it belongs
+	LLVMMoveBasicBlockAfter(end, last);
+	LLVMPositionBuilderAtEnd(builder, end);
 }
+
+void Break(LLVMBasicBlockRef block)
+{
+	LLVMBuildBr(builder, block);
+}
+
+// Labels - maybe blocks should create a 'begin' and 'end' llvm-block
+// - store in symbol table as "begin" and "end"
+// - if labeled, also store as label.begin and label.end?
+// - we push a new symbol hash on the stack for each block, so store begin and end on that instead
+// - what about nested blocks?  (no such thing?  always explicitly branched)
+// - check if symbol is already defined in scope first?
+// - disallow defining symbols for any labels in scope?
+// ** maybe add a label at end when encountering a break?  What about existing end blocks? (return vars?)
+// - continue in for loop needs to jump to increment, but its block will mask that label
+// - maybe pass blocks to jump to as params (block -> statements -> labeledStatement -> statement -> disruptiveStatement) 
+// - need to walk stack to support break w/ label (can't pass as param)
+// - disruptiveStatements only make sense in the context of for/while/do (break in switch), return in function
+// - might want to support break & continue in freestanding blocks (to jump to top or bottom)
+// ** if a disruptiveStatement (break, return) isn't at the end of a block, it means there is dead code.
+// - a block has to end in exactly one branch "if (...) break;" winds up with a branch for the break, and a second for the endif.
 
