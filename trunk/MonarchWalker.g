@@ -11,6 +11,9 @@ options
 scope Symbols
 {
 	pANTLR3_HASH_TABLE table;
+	LLVMBasicBlockRef begin;
+	LLVMBasicBlockRef end;
+	pANTLR3_STRING name; // label
 }
 
 @includes
@@ -21,7 +24,19 @@ scope Symbols
 @members
 {
 	static void ANTLR3_CDECL VariableDelete(void *var){}
-
+	
+	LLVMBasicBlockRef getEndBlock(pMonarchWalker ctx, pANTLR3_STRING name)
+	{
+		for (int i = (int)SCOPE_SIZE(Symbols) - 1; i >= 0; i--)
+		{
+			SCOPE_TYPE(Symbols) symbols = (SCOPE_TYPE(Symbols))SCOPE_INSTANCE(Symbols, i);
+			if (symbols->end != NULL)
+				if (!name || symbols->name == name)
+					return symbols->end;
+		}
+		return NULL;
+	}
+	
 	LLVMValueRef getSymbol(pMonarchWalker ctx, pANTLR3_STRING name)
 	{
 		for (int i = (int)SCOPE_SIZE(Symbols) - 1; i >= 0; i--)
@@ -65,6 +80,10 @@ scope Symbols; // global scope
 	InitCodegen();
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
+	$Symbols::begin = CreateBlock("entry");
+	$Symbols::end = NULL;
+	$Symbols::name = NULL;
+	BeginBlock($Symbols::begin);
 }
 @after
 {
@@ -83,7 +102,9 @@ scope Symbols; // specify at higher levels instead?
 {
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
-	$ref = CreateBlock(name);
+	$Symbols::begin = $ref = CreateBlock(name);
+	$Symbols::end = NULL;
+	$Symbols::name = NULL;
 	BeginBlock($ref);
 }
 	:	^( BLOCK r=statements ) { $result = $r.result; }
@@ -91,6 +112,13 @@ scope Symbols; // specify at higher levels instead?
 
 breakStatement
 	:	^( 'break' label=NameLiteral? )
+		{
+			Break(getEndBlock(ctx, $label ? $label.text : NULL));
+			// start a new basic block to catch any additional code that might get generated
+			// basic blocks cannot have multiple branches (e.g. if we break in an if statement
+			// a second branch will be added to endif).
+			BeginBlock(CreateBlock("unreachable"));
+		}
 	;
 
 caseClause
@@ -231,6 +259,9 @@ scope Symbols;
 		CreateBlock("for_incr"),
 		NULL // for_loop
 	};
+	$Symbols::begin = blocks[2]; // jump to increment on continue
+	$Symbols::end = CreateBlock("endfor");
+	$Symbols::name = NULL;
 }
 	:	^( 'for'
 			(	{ BeginBlock(blocks[0]); } ^( INIT expressionStatement ) )?
@@ -240,7 +271,7 @@ scope Symbols;
 			(	block["for_loop"] { blocks[3]=$block.ref; }
 			|	{ blocks[3]=CreateBlock("for_loop"); BeginBlock(blocks[3]); } ^( STAT statement )
 			)
-		)	{ ForLoop($cond.tree ? $cond.value : NULL, blocks); }
+		)	{ ForLoop($cond.tree ? $cond.value : NULL, blocks, $Symbols::end); }
 	;
 	
 functionLiteral returns [LLVMValueRef value]
@@ -248,10 +279,16 @@ functionLiteral returns [LLVMValueRef value]
 	;
 
 ifStatement
-	:	^( COND cond=expression iftrue=block["iftrue"] iffalse=block["iffalse"]? )
+@init
+{
+	LLVMBasicBlockRef endif = CreateBlock("endif");
+}
+	:	^( COND cond=expression
+			iftrue=block["iftrue"] { Break(endif); }
+			( iffalse=block["iffalse"] { Break(endif); } )? )
 		{
 			LLVMValueRef results[] = { $iftrue.result, $iffalse.tree ? $iffalse.result : NULL };
-			LLVMBasicBlockRef blocks[] = { $iftrue.ref, $iffalse.tree ? $iffalse.ref : NULL };
+			LLVMBasicBlockRef blocks[] = { $iftrue.ref, $iffalse.tree ? $iffalse.ref : NULL, endif };
 			Branch($cond.value, results, blocks);
 		}
 	;
@@ -305,6 +342,7 @@ statement returns [LLVMValueRef result]
 		)
 	;
 
+// only allow labels on switch, while, do and for?
 labeledStatement returns [LLVMValueRef result]
 	:	^( STAT r=statement { $result=$r.result; }
 			(	^( LABEL NameLiteral ) )? )
