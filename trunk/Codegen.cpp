@@ -127,7 +127,7 @@ LLVMValueRef DecrementValue(LLVMValueRef v)
 
 LLVMValueRef NegateValue(LLVMValueRef v)
 {
-	return v; //!!
+	return LLVMBuildNeg(builder, v, "");
 }
 
 LLVMValueRef InvertValue(LLVMValueRef v)
@@ -233,7 +233,7 @@ void LinkTo(LLVMBasicBlockRef block)
 	LLVMPositionBuilderAtEnd(builder, block);
 }
 
-LLVMValueRef Branch(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks)
+LLVMValueRef IfElse(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks)
 {
 	LLVMBasicBlockRef iftrue = blocks[0];
 	LLVMBasicBlockRef iffalse = blocks[1];
@@ -302,12 +302,13 @@ void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef bl
 	LLVMPositionBuilderAtEnd(builder, endwhile);
 }
 
-void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks, LLVMBasicBlockRef end)
+void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks)
 {
 	LLVMBasicBlockRef init_block = blocks[0];
 	LLVMBasicBlockRef cond_block = blocks[1];
 	LLVMBasicBlockRef incr_block = blocks[2];
 	LLVMBasicBlockRef loop_block = blocks[3];
+	LLVMBasicBlockRef  end_block = blocks[4];
 	
 	// branch to our init block
 	LLVMBasicBlockRef prev_block = LLVMGetPreviousBasicBlock(init_block);
@@ -323,7 +324,7 @@ void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks, LLVMBasicBlockRef end
 	if (cond)
 	{
 		//!!ARL: Assumes cond is a bool already (need type coersion).
-		LLVMBuildCondBr(builder, cond, loop_block, end);
+		LLVMBuildCondBr(builder, cond, loop_block, end_block);
 	}
 	else
 	{
@@ -332,8 +333,8 @@ void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks, LLVMBasicBlockRef end
 	}
 	
 	// chain last block back to increment block
-	LLVMBasicBlockRef last = LLVMGetLastBasicBlock(top_function);
-	LLVMPositionBuilderAtEnd(builder, last);
+	LLVMBasicBlockRef last_block = LLVMGetLastBasicBlock(top_function);
+	LLVMPositionBuilderAtEnd(builder, last_block);
 	LLVMBuildBr(builder, incr_block);
 	
 	// chain increment block to condition block
@@ -341,11 +342,11 @@ void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks, LLVMBasicBlockRef end
 	LLVMBuildBr(builder, cond_block);
 	
 	// move end block to end of function where it belongs
-	LLVMMoveBasicBlockAfter(end, last);
-	LLVMPositionBuilderAtEnd(builder, end);
+	LLVMMoveBasicBlockAfter(end_block, last_block);
+	LLVMPositionBuilderAtEnd(builder, end_block);
 }
 
-void Break(LLVMBasicBlockRef block)
+void JumpTo(LLVMBasicBlockRef block)
 {
 	LLVMBuildBr(builder, block);
 }

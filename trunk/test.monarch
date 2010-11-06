@@ -34,12 +34,23 @@ else
 
 for (x = 0; x < 10; ++x)
 {
+	if (x < 3)
+		continue;
+	
 	print x;
 	
 	if (x == 5)
-	{
 		break;
-	}
 }
 
-// - need support for single statement if
+print x; // x should not exist in this scope (only assignments/lvalues should create vars?)
+
+if (x > 0)
+	if (x > 100)
+		x = 200;
+	else
+		x = 300;
+	
+print x;
+
+// - need support for functions and arrays so we can keep old tests around and ensure they don't break.

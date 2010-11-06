@@ -66,15 +66,19 @@ breakStatement
 	:	'break'^ label=NameLiteral? ';'!
 	;
 
+continueStatement
+	:	'continue'^ label=NameLiteral? ';'!
+	;
+
 caseClause
 	:	'case'^ expression ':'! statements
 	;
 
 disruptiveStatement
-	:	breakStatement
-	|	returnStatement
+	:	returnStatement
+	|	breakStatement
+	|	continueStatement
 	|	throwStatement
-	//	what about continue?
 	;
 
 doStatement
@@ -181,9 +185,7 @@ forStatement
 	';'	increment=expressionStatement?			-> ^( INIT $initialization )? ^( COND $condition )? ^( INCR $increment )?
 	|	var=NameLiteral 'in' obj=expression		-> ^( VAR $var $obj )
 	)	')'
-	(	('{')=> block							-> ^( 'for' $forStatement block )
-	|	statement								-> ^( 'for' $forStatement ^( STAT statement ) ) // statement not labeled
-	)
+		blockOrStatement						-> ^( 'for' $forStatement blockOrStatement )
 	;
 
 // should parameters be optional as well?
@@ -192,9 +194,17 @@ functionLiteral
 	->	^( FUNC $name? $args $body )
 	;
 
-// what about elseif?
+blockOrStatement
+	:
+	(	('{')=> block	-> block
+	|	statement		-> ^( STAT statement ) // statement not labeled
+	)
+	;
+
+// ANTLR complains about this, but does the right thing (greedy - matches the inner-most if statement).
+// This problem goes away if you force if/else to always use blocks to avoid the ambiguity, but that makes simple logic more tedious to write.
 ifStatement
-	:	'if' '(' expression ')' if_block=block ( 'else' else_block=block )?
+	:	'if' '(' expression ')' if_block=blockOrStatement ( 'else' else_block=blockOrStatement )?
 	->	^( COND expression $if_block $else_block? )
 	;
 
