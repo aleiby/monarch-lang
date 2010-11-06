@@ -11,8 +11,12 @@ options
 scope Symbols
 {
 	pANTLR3_HASH_TABLE table;
-	LLVMBasicBlockRef begin;
-	LLVMBasicBlockRef end;
+}
+
+scope BreakContinue
+{
+	LLVMBasicBlockRef break_block;
+	LLVMBasicBlockRef continue_block;
 	pANTLR3_STRING name; // label
 }
 
@@ -25,14 +29,24 @@ scope Symbols
 {
 	static void ANTLR3_CDECL VariableDelete(void *var){}
 	
-	LLVMBasicBlockRef getEndBlock(pMonarchWalker ctx, pANTLR3_STRING name)
+	LLVMBasicBlockRef getBreakBlock(pMonarchWalker ctx, pANTLR3_STRING name)
 	{
-		for (int i = (int)SCOPE_SIZE(Symbols) - 1; i >= 0; i--)
+		for (int i = (int)SCOPE_SIZE(BreakContinue) - 1; i >= 0; i--)
 		{
-			SCOPE_TYPE(Symbols) symbols = (SCOPE_TYPE(Symbols))SCOPE_INSTANCE(Symbols, i);
-			if (symbols->end != NULL)
-				if (!name || symbols->name == name)
-					return symbols->end;
+			SCOPE_TYPE(BreakContinue) scope = (SCOPE_TYPE(BreakContinue))SCOPE_INSTANCE(BreakContinue, i);
+			if (!name || scope->name == name)
+				return scope->break_block;
+		}
+		return NULL;
+	}
+	
+	LLVMBasicBlockRef getContinueBlock(pMonarchWalker ctx, pANTLR3_STRING name)
+	{
+		for (int i = (int)SCOPE_SIZE(BreakContinue) - 1; i >= 0; i--)
+		{
+			SCOPE_TYPE(BreakContinue) scope = (SCOPE_TYPE(BreakContinue))SCOPE_INSTANCE(BreakContinue, i);
+			if (!name || scope->name == name)
+				return scope->continue_block;
 		}
 		return NULL;
 	}
@@ -77,13 +91,12 @@ program
 scope Symbols; // global scope
 @init
 {
-	InitCodegen();
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
-	$Symbols::begin = CreateBlock("entry");
-	$Symbols::end = NULL;
-	$Symbols::name = NULL;
-	BeginBlock($Symbols::begin);
+
+	InitCodegen();
+	LLVMBasicBlockRef entry = CreateBlock("entry");
+	BeginBlock(entry);
 }
 @after
 {
@@ -102,9 +115,7 @@ scope Symbols; // specify at higher levels instead?
 {
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
-	$Symbols::begin = $ref = CreateBlock(name);
-	$Symbols::end = NULL;
-	$Symbols::name = NULL;
+	$ref = CreateBlock(name);
 	BeginBlock($ref);
 }
 	:	^( BLOCK r=statements ) { $result = $r.result; }
@@ -113,7 +124,18 @@ scope Symbols; // specify at higher levels instead?
 breakStatement
 	:	^( 'break' label=NameLiteral? )
 		{
-			Break(getEndBlock(ctx, $label ? $label.text : NULL));
+			JumpTo(getBreakBlock(ctx, $label ? $label.text : NULL));
+			// start a new basic block to catch any additional code that might get generated
+			// basic blocks cannot have multiple branches (e.g. if we break in an if statement
+			// a second branch will be added to endif).
+			BeginBlock(CreateBlock("unreachable"));
+		}
+	;
+
+continueStatement
+	:	^( 'continue' label=NameLiteral? )
+		{
+			JumpTo(getContinueBlock(ctx, $label ? $label.text : NULL));
 			// start a new basic block to catch any additional code that might get generated
 			// basic blocks cannot have multiple branches (e.g. if we break in an if statement
 			// a second branch will be added to endif).
@@ -126,10 +148,10 @@ caseClause
 	;
 
 disruptiveStatement
-	:	breakStatement
-	|	returnStatement
+	:	returnStatement
+	|	breakStatement
+	|	continueStatement
 	|	throwStatement
-	//	what about continue?
 	;
 
 //!!ARL: I'm tempted to leave this out entirely.
@@ -174,44 +196,44 @@ conditional_expression returns [LLVMValueRef value]
 	|	^( '?' cond=logical_or_expression
 			{ BeginBlock(blocks[0] = CreateBlock("iftrue")); } iftrue=expression { results[0]=$iftrue.value; }
 			{ BeginBlock(blocks[1] = CreateBlock("iffalse")); } iffalse=conditional_expression { results[1]=$iffalse.value; } )
-			{ $value = Branch($cond.value, results, blocks); }
+			{ $value = IfElse($cond.value, results, blocks); }
 	;
 
 logical_or_expression returns [LLVMValueRef value]
 	:	logical_and_expression { $value = $logical_and_expression.value; }
-	|	^( '||' lhs=logical_or_expression rhs=logical_and_expression ) { $value = LogicOr($lhs.value, $rhs.value); }
+	|	^( '||' lhs=logical_or_expression rhs=logical_and_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : LogicOr($lhs.value, $rhs.value); }
 	;
 
 logical_and_expression returns [LLVMValueRef value]
 	:	equality_expression { $value = $equality_expression.value; }
-	|	^( '&&' lhs=logical_and_expression rhs=equality_expression ) { $value = LogicAnd($lhs.value, $rhs.value); }
+	|	^( '&&' lhs=logical_and_expression rhs=equality_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : LogicAnd($lhs.value, $rhs.value); }
 	;
 
 equality_expression returns [LLVMValueRef value]
 	:	relational_expression { $value = $relational_expression.value; }
-	|	^( '==' lhs=equality_expression rhs=relational_expression ) { $value = CmpEQ($lhs.value, $rhs.value); }
-	|	^( '!=' lhs=equality_expression rhs=relational_expression ) { $value = CmpNE($lhs.value, $rhs.value); }
+	|	^( '==' lhs=equality_expression rhs=relational_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : CmpEQ($lhs.value, $rhs.value); }
+	|	^( '!=' lhs=equality_expression rhs=relational_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : CmpNE($lhs.value, $rhs.value); }
 	;
 
 relational_expression returns [LLVMValueRef value]
 	:	additive_expression { $value = $additive_expression.value; }
-	|	^( '<'  lhs=relational_expression rhs=additive_expression ) { $value = CmpLT($lhs.value, $rhs.value); }
-	|	^( '>'  lhs=relational_expression rhs=additive_expression ) { $value = CmpGT($lhs.value, $rhs.value); }
-	|	^( '<=' lhs=relational_expression rhs=additive_expression ) { $value = CmpLE($lhs.value, $rhs.value); }
-	|	^( '>=' lhs=relational_expression rhs=additive_expression ) { $value = CmpGE($lhs.value, $rhs.value); }
+	|	^( '<'  lhs=relational_expression rhs=additive_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : CmpLT($lhs.value, $rhs.value); }
+	|	^( '>'  lhs=relational_expression rhs=additive_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : CmpGT($lhs.value, $rhs.value); }
+	|	^( '<=' lhs=relational_expression rhs=additive_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : CmpLE($lhs.value, $rhs.value); }
+	|	^( '>=' lhs=relational_expression rhs=additive_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : CmpGE($lhs.value, $rhs.value); }
 	;
 
 additive_expression returns [LLVMValueRef value]
 	:	multiplicative_expression { $value = $multiplicative_expression.value; }
-	|	^( '+' lhs=additive_expression rhs=multiplicative_expression ) { $value = AddValues($lhs.value, $rhs.value); }
-	|	^( '-' lhs=additive_expression rhs=multiplicative_expression ) { $value = SubValues($lhs.value, $rhs.value); }
+	|	^( '+' lhs=additive_expression rhs=multiplicative_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : AddValues($lhs.value, $rhs.value); }
+	|	^( '-' lhs=additive_expression rhs=multiplicative_expression ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : SubValues($lhs.value, $rhs.value); }
 	;
 
 multiplicative_expression returns [LLVMValueRef value]
 	:	unary_expression[ANTLR3_FALSE] { $value = $unary_expression.value; }
-	|	^( '*' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ) { $value = MulValues($lhs.value, $rhs.value);  }
-	|	^( '/' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ) { $value = DivValues($lhs.value, $rhs.value);  }
-	|	^( '%' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ) { $value = ModValues($lhs.value, $rhs.value);  }
+	|	^( '*' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : MulValues($lhs.value, $rhs.value);  }
+	|	^( '/' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : DivValues($lhs.value, $rhs.value);  }
+	|	^( '%' lhs=multiplicative_expression rhs=unary_expression[ANTLR3_FALSE] ){$lhs.value && $rhs.value}? { $value = HASEXCEPTION() ? NULL : ModValues($lhs.value, $rhs.value);  }
 	;
 
 unary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
@@ -236,19 +258,20 @@ postfix_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	;
 
 primary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
-	:	NameLiteral
+@init { $value = NULL; }
+	:	NameLiteral {$lvalue || symbolDefined(ctx, $NameLiteral.text)}?
 		{
-			defineSymbol(ctx, $NameLiteral.text);
+			if (HASEXCEPTION()) goto ruleprimary_expressionEx; // this should be generated automatically
+			if ($lvalue) defineSymbol(ctx, $NameLiteral.text);
 			$value = getSymbol(ctx, $NameLiteral.text);
-			if (!$lvalue)
-				$value = LoadValue($value);
+			if (!$lvalue) $value = LoadValue($value);
 		}
 	|	literal					{ $value = $literal.value; }
 	|	^( NESTED expression )	{ $value = $expression.value; }
 	;
 
 forStatement
-scope Symbols;
+scope Symbols, BreakContinue;
 @init
 {
 	$Symbols::table = antlr3HashTableNew(11);
@@ -257,11 +280,12 @@ scope Symbols;
 		CreateBlock("for_init"),
 		CreateBlock("for_cond"),
 		CreateBlock("for_incr"),
-		NULL // for_loop
+		NULL, // for_loop - created below
+		CreateBlock("endfor")
 	};
-	$Symbols::begin = blocks[2]; // jump to increment on continue
-	$Symbols::end = CreateBlock("endfor");
-	$Symbols::name = NULL;
+	$BreakContinue::continue_block = blocks[2]; // jump to increment on continue
+	$BreakContinue::break_block = blocks[4]; // jump to end on break
+	$BreakContinue::name = NULL; // pass thru?
 }
 	:	^( 'for'
 			(	{ BeginBlock(blocks[0]); } ^( INIT expressionStatement ) )?
@@ -271,7 +295,7 @@ scope Symbols;
 			(	block["for_loop"] { blocks[3]=$block.ref; }
 			|	{ blocks[3]=CreateBlock("for_loop"); BeginBlock(blocks[3]); } ^( STAT statement )
 			)
-		)	{ ForLoop($cond.tree ? $cond.value : NULL, blocks, $Symbols::end); }
+		)	{ ForLoop($cond.tree ? $cond.value : NULL, blocks); }
 	;
 	
 functionLiteral returns [LLVMValueRef value]
@@ -281,16 +305,17 @@ functionLiteral returns [LLVMValueRef value]
 ifStatement
 @init
 {
-	LLVMBasicBlockRef endif = CreateBlock("endif");
+	LLVMValueRef results[] = { NULL, NULL };
+	LLVMBasicBlockRef blocks[] = { NULL, NULL, CreateBlock("endif") };
 }
 	:	^( COND cond=expression
-			iftrue=block["iftrue"] { Break(endif); }
-			( iffalse=block["iffalse"] { Break(endif); } )? )
-		{
-			LLVMValueRef results[] = { $iftrue.result, $iffalse.tree ? $iffalse.result : NULL };
-			LLVMBasicBlockRef blocks[] = { $iftrue.ref, $iffalse.tree ? $iffalse.ref : NULL, endif };
-			Branch($cond.value, results, blocks);
-		}
+			(	iftrue=block["iftrue"] { results[0]=$iftrue.result; blocks[0]=$iftrue.ref; JumpTo(blocks[2]); }
+			|	{ blocks[0]=CreateBlock("iftrue"); BeginBlock(blocks[0]); } ^( STAT st=statement ) { results[0]=$st.result; JumpTo(blocks[2]); }
+			)
+			(	iffalse=block["iffalse"] { results[1]=$iffalse.result; blocks[1]=$iffalse.ref; JumpTo(blocks[2]); }
+			|	{ blocks[1]=CreateBlock("iffalse"); BeginBlock(blocks[1]); } ^( STAT sf=statement ) { results[1]=$sf.result; JumpTo(blocks[2]); }
+			)?
+			)	{ IfElse($cond.value, results, blocks); }
 	;
 
 literal returns [LLVMValueRef value]
