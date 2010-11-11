@@ -18,7 +18,6 @@
 static LLVMModuleRef module;
 static LLVMBuilderRef builder;
 static LLVMValueRef printn; //!!ARL: Unhardcode
-static LLVMValueRef top_function;
 
 void InitCodegen()
 {
@@ -33,19 +32,11 @@ void InitCodegen()
 	printn = LLVMAddFunction(module, "printn", type);
 	LLVMSetFunctionCallConv(printn, LLVMCCallConv); //!!ARL: Necessary?
 	LLVMSetLinkage(printn, LLVMExternalLinkage);
-	
-	{
-		//!!ARL: Use label to name function (probably have to pull out as separate action)
-		LLVMTypeRef type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
-		top_function = LLVMAddFunction(module, "", type);
-		LLVMSetFunctionCallConv(top_function, LLVMCCallConv); //!!ARL: Necessary?
-		LLVMSetLinkage(top_function, LLVMExternalLinkage);
-	}
 }
 
-void TermCodegen()
+void TermCodegen(LLVMValueRef function)
 {
-	LLVMBuildRetVoid(builder);
+	//!!ARL: Should probably move this out of tree walker (to main.cpp), and handle errors properly.
 	
 	fprintf(stdout, "\n=before=\n");
 	LLVMDumpModule(module);
@@ -54,7 +45,7 @@ void TermCodegen()
 	LLVMVerifyModule(module, LLVMAbortProcessAction, &error);
 	LLVMDisposeMessage(error); // Handler == LLVMAbortProcessAction -> No need to check errors
 	
-	//LLVMViewFunctionCFG(top_function);
+	//LLVMViewFunctionCFG(function);
 	
 	LLVMExecutionEngineRef engine;
 	LLVMModuleProviderRef provider = LLVMCreateModuleProviderForExistingModule(module);
@@ -75,23 +66,53 @@ void TermCodegen()
 	LLVMAddCFGSimplificationPass(pass);
 	LLVMRunPassManager(pass, module);
 	
-	//LLVMViewFunctionCFG(top_function);
+	//LLVMViewFunctionCFG(function);
 
 	fprintf(stdout, "\n=after=\n");
 	LLVMDumpModule(module);
 	
 	fprintf(stdout, "\n=output=\n");
-	LLVMRunFunction(engine, top_function, 0, NULL);
+	LLVMRunFunction(engine, function, 0, NULL);
 	
 	LLVMDisposePassManager(pass);
 	LLVMDisposeBuilder(builder);
 	LLVMDisposeExecutionEngine(engine);
 }
 
-LLVMValueRef CreateValue(const char* name)
+LLVMTypeRef GetType(LLVMValueRef value)
 {
-	//!!ARL: Default value?  Also need to infer type.
-	return LLVMBuildAlloca(builder, LLVMInt32Type(), name);
+	return LLVMTypeOf(value);
+}
+
+LLVMValueRef CreateFunction(const char* name)
+{
+	LLVMTypeRef type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
+	LLVMValueRef function = LLVMAddFunction(module, name, type);
+	LLVMSetFunctionCallConv(function, LLVMCCallConv); //!!ARL: Necessary?
+	LLVMSetLinkage(function, LLVMExternalLinkage);
+	return function;
+}
+
+LLVMValueRef CallFunction(LLVMValueRef function)
+{
+	//!!ARL: Need to pass args.
+	return LLVMBuildCall(builder, function, NULL, 0, "");
+}
+
+void BuildReturn(LLVMValueRef function)
+{
+	LLVMBuildRetVoid(builder);
+}
+
+void ContinueFunction(LLVMValueRef function)
+{
+	LLVMBasicBlockRef last_block = LLVMGetLastBasicBlock(function);
+	LLVMPositionBuilderAtEnd(builder, last_block);
+}
+
+LLVMValueRef CreateValue(const char* name, LLVMTypeRef type)
+{
+	return LLVMBuildAlloca(builder, type, name);
 }
 
 LLVMValueRef LoadValue(LLVMValueRef v)
@@ -217,9 +238,9 @@ LLVMValueRef CmpGE(LLVMValueRef lhs, LLVMValueRef rhs)
 	return LLVMBuildICmp(builder, LLVMIntSGE, lhs, rhs, "");
 }
 
-LLVMBasicBlockRef CreateBlock(const char* name)
+LLVMBasicBlockRef CreateBlock(LLVMValueRef function, const char* name)
 {
-	return LLVMAppendBasicBlock(top_function, name);
+	return LLVMAppendBasicBlock(function, name);
 }
 
 void BeginBlock(LLVMBasicBlockRef block)
@@ -233,14 +254,14 @@ void LinkTo(LLVMBasicBlockRef block)
 	LLVMPositionBuilderAtEnd(builder, block);
 }
 
-LLVMValueRef IfElse(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks)
+LLVMValueRef IfElse(LLVMValueRef function, LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks)
 {
 	LLVMBasicBlockRef iftrue = blocks[0];
 	LLVMBasicBlockRef iffalse = blocks[1];
 	LLVMBasicBlockRef endif = blocks[2];
 	
 	// move endif to the end of the function so far
-	LLVMMoveBasicBlockAfter(endif, LLVMGetLastBasicBlock(top_function));
+	LLVMMoveBasicBlockAfter(endif, LLVMGetLastBasicBlock(function));
 	
 	// insert our conditional branch just ahead of the iftrue block
 	LLVMBasicBlockRef prev = LLVMGetPreviousBasicBlock(iftrue);
@@ -264,7 +285,7 @@ LLVMValueRef IfElse(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef*
 	return results[0] ? results[0] : results[1];
 }
 
-void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block)
+void DoWhile(LLVMValueRef function, LLVMValueRef cond, LLVMBasicBlockRef block)
 {
 	// insert a branch to our block
 	LLVMBasicBlockRef prev_block = LLVMGetPreviousBasicBlock(block);
@@ -272,7 +293,7 @@ void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block)
 	LLVMBuildBr(builder, block);
 	
 	// tack on an end block to branch to when the condition fails		
-	LLVMBasicBlockRef enddo = LLVMAppendBasicBlock(top_function, "enddo");
+	LLVMBasicBlockRef enddo = LLVMAppendBasicBlock(function, "enddo");
 	LLVMPositionBuilderAtEnd(builder, block);
 	
 	//!!ARL: Assumes cond is a bool already (need type coersion).
@@ -280,7 +301,7 @@ void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block)
 	LLVMPositionBuilderAtEnd(builder, enddo);
 }
 
-void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef block)
+void While(LLVMValueRef function, LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef block)
 {
 	// insert a branch to the condition block
 	LLVMBasicBlockRef prev_block = LLVMGetPreviousBasicBlock(cond_block);
@@ -288,7 +309,7 @@ void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef bl
 	LLVMBuildBr(builder, cond_block);
 	
 	// tack on an end block to branch to when the condition fails		
-	LLVMBasicBlockRef endwhile = LLVMAppendBasicBlock(top_function, "endwhile");
+	LLVMBasicBlockRef endwhile = LLVMAppendBasicBlock(function, "endwhile");
 	
 	// evaluate condition to decide to execute block or exit
 	LLVMPositionBuilderAtEnd(builder, cond_block);
@@ -302,7 +323,7 @@ void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef bl
 	LLVMPositionBuilderAtEnd(builder, endwhile);
 }
 
-void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks)
+void ForLoop(LLVMValueRef function, LLVMValueRef cond, LLVMBasicBlockRef* blocks)
 {
 	LLVMBasicBlockRef init_block = blocks[0];
 	LLVMBasicBlockRef cond_block = blocks[1];
@@ -333,7 +354,7 @@ void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks)
 	}
 	
 	// chain last block back to increment block
-	LLVMBasicBlockRef last_block = LLVMGetLastBasicBlock(top_function);
+	LLVMBasicBlockRef last_block = LLVMGetLastBasicBlock(function);
 	LLVMPositionBuilderAtEnd(builder, last_block);
 	LLVMBuildBr(builder, incr_block);
 	

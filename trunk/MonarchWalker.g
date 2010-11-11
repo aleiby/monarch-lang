@@ -13,6 +13,11 @@ scope Symbols
 	pANTLR3_HASH_TABLE table;
 }
 
+scope Function
+{
+	LLVMValueRef ref;
+}
+
 scope BreakContinue
 {
 	LLVMBasicBlockRef break_block;
@@ -28,6 +33,20 @@ scope BreakContinue
 @members
 {
 	static void ANTLR3_CDECL VariableDelete(void *var){}
+	
+	LLVMValueRef getOuter(pMonarchWalker ctx, LLVMValueRef function)
+	{
+		for (int i = (int)SCOPE_SIZE(Function) - 1; i > 0; i--)
+		{
+			SCOPE_TYPE(Function) scope = (SCOPE_TYPE(Function))SCOPE_INSTANCE(Function, i);
+			if (scope->ref == function)
+			{
+				scope = (SCOPE_TYPE(Function))SCOPE_INSTANCE(Function, i - 1);
+				return scope->ref;
+			}
+		}
+		return NULL;
+	}
 	
 	LLVMBasicBlockRef getBreakBlock(pMonarchWalker ctx, pANTLR3_STRING name)
 	{
@@ -72,13 +91,17 @@ scope BreakContinue
 		}
 		return ANTLR3_FALSE;
 	}
-	void defineSymbol(pMonarchWalker ctx, pANTLR3_STRING name)
+	void addSymbol(pMonarchWalker ctx, LLVMValueRef value, const char* name)
+	{
+		SCOPE_TYPE(Symbols) symbols = SCOPE_TOP(Symbols);
+		symbols->table->put(symbols->table, (void*)name, value, VariableDelete);
+	}
+	void defineSymbol(pMonarchWalker ctx, pANTLR3_STRING name, LLVMTypeRef type)
 	{
 		if (!symbolDefined(ctx, name))
 		{
-			LLVMValueRef value = CreateValue((const char *)name->chars);
-			SCOPE_TYPE(Symbols) symbols = SCOPE_TOP(Symbols);
-			symbols->table->put(symbols->table, name->chars, value, VariableDelete);
+			LLVMValueRef value = CreateValue((const char *)name->chars, type);
+			addSymbol(ctx, value, (const char*)name->chars);
 		}
 	}
 	void ANTLR3_CDECL freeTable(SCOPE_TYPE(Symbols) symbols)
@@ -88,19 +111,21 @@ scope BreakContinue
 }
 
 program
-scope Symbols; // global scope
+scope Symbols, Function; // global scope
 @init
 {
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
 
 	InitCodegen();
-	LLVMBasicBlockRef entry = CreateBlock("entry");
+	$Function::ref = CreateFunction("main");
+	LLVMBasicBlockRef entry = CreateBlock($Function::ref, "entry");
 	BeginBlock(entry);
 }
 @after
 {
-	TermCodegen();
+	BuildReturn($Function::ref);
+	TermCodegen($Function::ref);
 }
 	:	statements
 	;
@@ -115,7 +140,7 @@ scope Symbols; // specify at higher levels instead?
 {
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
-	$ref = CreateBlock(name);
+	$ref = CreateBlock(SCOPE_TOP(Function)->ref, name);
 	BeginBlock($ref);
 }
 	:	^( BLOCK r=statements ) { $result = $r.result; }
@@ -128,7 +153,7 @@ breakStatement
 			// start a new basic block to catch any additional code that might get generated
 			// basic blocks cannot have multiple branches (e.g. if we break in an if statement
 			// a second branch will be added to endif).
-			BeginBlock(CreateBlock("unreachable"));
+			BeginBlock(CreateBlock(SCOPE_TOP(Function)->ref, "unreachable"));
 		}
 	;
 
@@ -139,7 +164,7 @@ continueStatement
 			// start a new basic block to catch any additional code that might get generated
 			// basic blocks cannot have multiple branches (e.g. if we break in an if statement
 			// a second branch will be added to endif).
-			BeginBlock(CreateBlock("unreachable"));
+			BeginBlock(CreateBlock(SCOPE_TOP(Function)->ref, "unreachable"));
 		}
 	;
 
@@ -156,7 +181,7 @@ disruptiveStatement
 
 //!!ARL: I'm tempted to leave this out entirely.
 doStatement
-	:	^( DO_WHILE block["do"] cond=expression ) { DoWhile($cond.value, $block.ref); }
+	:	^( DO_WHILE block["do"] cond=expression ) { DoWhile(SCOPE_TOP(Function)->ref, $cond.value, $block.ref); }
 	;
 
 expressionStatement
@@ -174,15 +199,17 @@ constant_expression
 
 assignment_expression returns [LLVMValueRef value]
 options {backtrack=true;}
-	:	^( '='  lvalue r=assignment_expression ) { $value = Assignment($lvalue.value, $r.value); }
-	|	^( '+=' lvalue r=assignment_expression ) { LLVMValueRef tmp = AddValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
-	|	^( '-=' lvalue r=assignment_expression ) { LLVMValueRef tmp = SubValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
-	|	^( '*=' lvalue r=assignment_expression ) { LLVMValueRef tmp = MulValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
-	|	^( '/=' lvalue r=assignment_expression ) { LLVMValueRef tmp = DivValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
+	:	^( '='  r=assignment_expression lvalue[GetType($r.value)] ) { $value = Assignment($lvalue.value, $r.value); }
+	|	^( '+=' r=assignment_expression lvalue[GetType($r.value)] ) { LLVMValueRef tmp = AddValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '-=' r=assignment_expression lvalue[GetType($r.value)] ) { LLVMValueRef tmp = SubValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '*=' r=assignment_expression lvalue[GetType($r.value)] ) { LLVMValueRef tmp = MulValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
+	|	^( '/=' r=assignment_expression lvalue[GetType($r.value)] ) { LLVMValueRef tmp = DivValues($lvalue.value, $r.value); $value = Assignment($lvalue.value, tmp); }
 	|	conditional_expression { $value = $conditional_expression.value; }
 	;
 
-lvalue returns [LLVMValueRef value]
+lvalue[LLVMTypeRef _type] returns [LLVMValueRef value]
+scope { LLVMTypeRef type; }
+@init { $lvalue::type = $_type; }
 	:	unary_expression[ANTLR3_TRUE] { $value = $unary_expression.value; }
 	;
 
@@ -191,12 +218,13 @@ conditional_expression returns [LLVMValueRef value]
 {
 	LLVMValueRef results[] = { NULL, NULL };
 	LLVMBasicBlockRef blocks[] = { NULL, NULL };
+	LLVMValueRef function = SCOPE_TOP(Function)->ref;
 }
 	:	logical_or_expression { $value = $logical_or_expression.value; }
 	|	^( '?' cond=logical_or_expression
-			{ BeginBlock(blocks[0] = CreateBlock("iftrue")); } iftrue=expression { results[0]=$iftrue.value; }
-			{ BeginBlock(blocks[1] = CreateBlock("iffalse")); } iffalse=conditional_expression { results[1]=$iffalse.value; } )
-			{ $value = IfElse($cond.value, results, blocks); }
+			{ BeginBlock(blocks[0] = CreateBlock(function, "iftrue")); } iftrue=expression { results[0]=$iftrue.value; }
+			{ BeginBlock(blocks[1] = CreateBlock(function, "iffalse")); } iffalse=conditional_expression { results[1]=$iffalse.value; } )
+			{ $value = IfElse(function, $cond.value, results, blocks); }
 	;
 
 logical_or_expression returns [LLVMValueRef value]
@@ -250,8 +278,8 @@ unary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 
 postfix_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	:	primary_expression[$lvalue] { $value = $primary_expression.value; }
-	|	^( INDX postfix_expression[ANTLR3_FALSE] expression )
-	|	^( CALL postfix_expression[ANTLR3_FALSE] expression? )
+	|	^( INDX array=postfix_expression[ANTLR3_FALSE] indx=expression )
+	|	^( CALL function=postfix_expression[ANTLR3_FALSE] args=expression? ) { $value = CallFunction($function.value); }
 	|	^( '.' postfix_expression[ANTLR3_FALSE] NameLiteral )
 	|	^( POSTINC postfix_expression[ANTLR3_FALSE] )
 	|	^( POSTDEC postfix_expression[ANTLR3_FALSE] )
@@ -262,7 +290,7 @@ primary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	:	NameLiteral {$lvalue || symbolDefined(ctx, $NameLiteral.text)}?
 		{
 			if (HASEXCEPTION()) goto ruleprimary_expressionEx; // this should be generated automatically
-			if ($lvalue) defineSymbol(ctx, $NameLiteral.text);
+			if (SCOPE_SIZE(lvalue) > 0) defineSymbol(ctx, $NameLiteral.text, SCOPE_TOP(lvalue)->type);
 			$value = getSymbol(ctx, $NameLiteral.text);
 			if (!$lvalue) $value = LoadValue($value);
 		}
@@ -276,12 +304,13 @@ scope Symbols, BreakContinue;
 {
 	$Symbols::table = antlr3HashTableNew(11);
 	SCOPE_TOP(Symbols)->free = freeTable;
+	LLVMValueRef function = SCOPE_TOP(Function)->ref;
 	LLVMBasicBlockRef blocks[] = {
-		CreateBlock("for_init"),
-		CreateBlock("for_cond"),
-		CreateBlock("for_incr"),
+		CreateBlock(function, "for_init"),
+		CreateBlock(function, "for_cond"),
+		CreateBlock(function, "for_incr"),
 		NULL, // for_loop - created below
-		CreateBlock("endfor")
+		CreateBlock(function, "endfor")
 	};
 	$BreakContinue::continue_block = blocks[2]; // jump to increment on continue
 	$BreakContinue::break_block = blocks[4]; // jump to end on break
@@ -293,29 +322,49 @@ scope Symbols, BreakContinue;
 			(	{ BeginBlock(blocks[2]); } ^( INCR expressionStatement ) )?
 //			(	^( VAR var=NameLiteral obj=expression ) )?
 			(	block["for_loop"] { blocks[3]=$block.ref; }
-			|	{ blocks[3]=CreateBlock("for_loop"); BeginBlock(blocks[3]); } ^( STAT statement )
+			|	{ blocks[3]=CreateBlock(function, "for_loop"); BeginBlock(blocks[3]); } ^( STAT statement )
 			)
-		)	{ ForLoop($cond.tree ? $cond.value : NULL, blocks); }
+		)	{ ForLoop(function, $cond.tree ? $cond.value : NULL, blocks); }
 	;
 	
 functionLiteral returns [LLVMValueRef value]
-	:	^( FUNC name=NameLiteral? args=parameters body=block[$name ? (const char *)$name.text->chars : ""] )
+scope Symbols, Function;
+@init
+{
+	$Symbols::table = antlr3HashTableNew(11);
+	SCOPE_TOP(Symbols)->free = freeTable;
+	const char* function_name = "";
+}
+@after
+{
+	BuildReturn($Function::ref);
+	ContinueFunction(getOuter(ctx, $Function::ref));	//!!ARL: Should maybe implement our own push/pop for functions (rather than using scopes).
+}
+	:	^( FUNC ( name=NameLiteral { function_name = $name ? (const char *)$name.text->chars : ""; } )?
+			^( PARAMS args+=NameLiteral* )
+		{
+			$Function::ref = CreateFunction(function_name);
+			addSymbol(ctx, $Function::ref, function_name);
+			$value = $Function::ref;
+		}
+		block[function_name] )
 	;
 
 ifStatement
 @init
 {
+	LLVMValueRef function = SCOPE_TOP(Function)->ref;
 	LLVMValueRef results[] = { NULL, NULL };
-	LLVMBasicBlockRef blocks[] = { NULL, NULL, CreateBlock("endif") };
+	LLVMBasicBlockRef blocks[] = { NULL, NULL, CreateBlock(function, "endif") };
 }
 	:	^( COND cond=expression
 			(	iftrue=block["iftrue"] { results[0]=$iftrue.result; blocks[0]=$iftrue.ref; JumpTo(blocks[2]); }
-			|	{ blocks[0]=CreateBlock("iftrue"); BeginBlock(blocks[0]); } ^( STAT st=statement ) { results[0]=$st.result; JumpTo(blocks[2]); }
+			|	{ blocks[0]=CreateBlock(function, "iftrue"); BeginBlock(blocks[0]); } ^( STAT st=statement ) { results[0]=$st.result; JumpTo(blocks[2]); }
 			)
 			(	iffalse=block["iffalse"] { results[1]=$iffalse.result; blocks[1]=$iffalse.ref; JumpTo(blocks[2]); }
-			|	{ blocks[1]=CreateBlock("iffalse"); BeginBlock(blocks[1]); } ^( STAT sf=statement ) { results[1]=$sf.result; JumpTo(blocks[2]); }
+			|	{ blocks[1]=CreateBlock(function, "iffalse"); BeginBlock(blocks[1]); } ^( STAT sf=statement ) { results[1]=$sf.result; JumpTo(blocks[2]); }
 			)?
-			)	{ IfElse($cond.value, results, blocks); }
+			)	{ IfElse(SCOPE_TOP(Function)->ref, $cond.value, results, blocks); }
 	;
 
 literal returns [LLVMValueRef value]
@@ -344,10 +393,6 @@ objectLiteral returns [LLVMValueRef value]
 namedExpression
 	:	^( ':' NameLiteral constant_expression )
 	|	^( ':' StringLiteral constant_expression )
-	;
-
-parameters
-	:	^( PARAMS NameLiteral* )
 	;
 
 returnStatement
@@ -393,9 +438,10 @@ tryStatement
 whileStatement
 @init
 {
-	LLVMBasicBlockRef cond_block = CreateBlock("while_cond");
+	LLVMValueRef function = SCOPE_TOP(Function)->ref;
+	LLVMBasicBlockRef cond_block = CreateBlock(function, "while_cond");
 	BeginBlock(cond_block);
 }
-	:	^( WHILE cond=expression block["while_loop"] ) { While($cond.value, cond_block, $block.ref); }
+	:	^( WHILE cond=expression block["while_loop"] ) { While(function, $cond.value, cond_block, $block.ref); }
 	;
 
