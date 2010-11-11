@@ -7,7 +7,7 @@
  *
  */
 
-//typedef struct LLVMOpaqueType *LLVMTypeRef;
+typedef struct LLVMOpaqueType *LLVMTypeRef;
 typedef struct LLVMOpaqueValue *LLVMValueRef;
 typedef struct LLVMOpaqueBasicBlock *LLVMBasicBlockRef;
 
@@ -16,9 +16,16 @@ extern "C" {
 #endif
 
 	void InitCodegen();
-	void TermCodegen();
+	void TermCodegen(LLVMValueRef function);
+	
+	LLVMTypeRef GetType(LLVMValueRef value);
 
-	LLVMValueRef CreateValue(const char* name);
+	LLVMValueRef CreateFunction(const char* name);
+	LLVMValueRef CallFunction(LLVMValueRef function);
+	void BuildReturn(LLVMValueRef function);
+	void ContinueFunction(LLVMValueRef function);
+	
+	LLVMValueRef CreateValue(const char* name, LLVMTypeRef type);
 	LLVMValueRef LoadValue(LLVMValueRef v);
 	LLVMValueRef ConstInt(int value);
 	LLVMValueRef ConstBool(int value);
@@ -45,14 +52,14 @@ extern "C" {
 	LLVMValueRef CmpLE(LLVMValueRef lhs, LLVMValueRef rhs);
 	LLVMValueRef CmpGE(LLVMValueRef lhs, LLVMValueRef rhs);
 	
-	LLVMBasicBlockRef CreateBlock(const char* name);
+	LLVMBasicBlockRef CreateBlock(LLVMValueRef function, const char* name);
 	void BeginBlock(LLVMBasicBlockRef block);
 	void LinkTo(LLVMBasicBlockRef block);
 	
-	LLVMValueRef IfElse(LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks);
-	void DoWhile(LLVMValueRef cond, LLVMBasicBlockRef block);
-	void While(LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef block);
-	void ForLoop(LLVMValueRef cond, LLVMBasicBlockRef* blocks);
+	LLVMValueRef IfElse(LLVMValueRef function, LLVMValueRef cond, LLVMValueRef* results, LLVMBasicBlockRef* blocks);
+	void DoWhile(LLVMValueRef function, LLVMValueRef cond, LLVMBasicBlockRef block);
+	void While(LLVMValueRef function, LLVMValueRef cond, LLVMBasicBlockRef cond_block, LLVMBasicBlockRef block);
+	void ForLoop(LLVMValueRef function, LLVMValueRef cond, LLVMBasicBlockRef* blocks);
 	void JumpTo(LLVMBasicBlockRef block);
 
 #ifdef __cplusplus

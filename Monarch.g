@@ -102,7 +102,8 @@ constant_expression
 
 assignment_expression
 options {backtrack=true;}
-	:	lvalue assignment_operator^ assignment_expression
+	:	lvalue assignment_operator assignment_expression
+	->	^( assignment_operator assignment_expression lvalue )
 	|	conditional_expression
 	;
 
