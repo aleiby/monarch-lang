@@ -131,7 +131,7 @@ scope Symbols, Function; // global scope
 	;
 
 arrayLiteral returns [LLVMValueRef value]
-	:	^( ARRAY expression? )
+	:	^( ARRAY expression? ) { $value = CreateArray(); }
 	;
 
 block[const char* name] returns [LLVMValueRef result, LLVMBasicBlockRef ref]
@@ -279,12 +279,25 @@ unary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 postfix_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	:	primary_expression[$lvalue] { $value = $primary_expression.value; }
 	|	^( INDX array=postfix_expression[ANTLR3_FALSE] indx=expression )
+		{
+			if (SCOPE_SIZE(lvalue) > 0)
+			{
+				$value = PutArray($array.value, $indx.value, SCOPE_TOP(lvalue)->type);
+			}
+			else
+			{
+				$value = GetArray($array.value, $indx.value);
+			}
+			if (!$lvalue) $value = LoadValue($value);
+		}
 	|	^( CALL function=postfix_expression[ANTLR3_FALSE] args=expression? ) { $value = CallFunction($function.value); }
 	|	^( '.' postfix_expression[ANTLR3_FALSE] NameLiteral )
 	|	^( POSTINC postfix_expression[ANTLR3_FALSE] )
 	|	^( POSTDEC postfix_expression[ANTLR3_FALSE] )
 	;
 
+//!!ARL: Don't need to pass lvalue bool if we can check rule scope size,
+// however, we still need to avoid LoadValue when working with pre-incr/decr.
 primary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 @init { $value = NULL; }
 	:	NameLiteral {$lvalue || symbolDefined(ctx, $NameLiteral.text)}?

@@ -17,7 +17,11 @@
 
 static LLVMModuleRef module;
 static LLVMBuilderRef builder;
-static LLVMValueRef printn; //!!ARL: Unhardcode
+
+static LLVMValueRef printn;
+static LLVMValueRef newarray;
+static LLVMValueRef getarray;
+static LLVMValueRef putarray;
 
 void InitCodegen()
 {
@@ -26,12 +30,42 @@ void InitCodegen()
 	module = LLVMModuleCreateWithName("monarch");
 	builder = LLVMCreateBuilder();
 	
+	//!!ARL: Should maybe build 'extern' functionality to define these in the script itself.
+	
 	// stub in print functionality
-	LLVMTypeRef args[] = { LLVMInt32Type() };
-	LLVMTypeRef type = LLVMFunctionType(LLVMVoidType(), args, 1, 0);
-	printn = LLVMAddFunction(module, "printn", type);
-	LLVMSetFunctionCallConv(printn, LLVMCCallConv); //!!ARL: Necessary?
-	LLVMSetLinkage(printn, LLVMExternalLinkage);
+	{
+		LLVMTypeRef args[] = { LLVMInt32Type() };
+		LLVMTypeRef type = LLVMFunctionType(LLVMVoidType(), args, 1, 0);
+		printn = LLVMAddFunction(module, "printn", type);
+		LLVMSetFunctionCallConv(printn, LLVMCCallConv); //!!ARL: Necessary?
+		LLVMSetLinkage(printn, LLVMExternalLinkage);
+	}
+	
+	// stub in array functionality
+	{
+		LLVMAddTypeName(module, "array", LLVMPointerType(LLVMOpaqueType(), 0));
+		LLVMTypeRef args[] = { LLVMInt32Type() };
+		LLVMTypeRef type = LLVMFunctionType(LLVMGetTypeByName(module, "array"), args, 1, 0);
+		newarray = LLVMAddFunction(module, "newarray", type);
+		LLVMSetFunctionCallConv(newarray, LLVMCCallConv);
+		LLVMSetLinkage(newarray, LLVMExternalLinkage);
+	}
+	
+	{
+		LLVMTypeRef args[] = { LLVMGetTypeByName(module, "array"), LLVMInt32Type() };
+		LLVMTypeRef type = LLVMFunctionType(LLVMPointerType(LLVMInt8Type(), 0), args, 2, 0);
+		getarray = LLVMAddFunction(module, "getarray", type);
+		LLVMSetFunctionCallConv(getarray, LLVMCCallConv);
+		LLVMSetLinkage(getarray, LLVMExternalLinkage);
+	}
+
+	{
+		LLVMTypeRef args[] = { LLVMGetTypeByName(module, "array"), LLVMInt32Type(), LLVMPointerType(LLVMInt8Type(), 0) };
+		LLVMTypeRef type = LLVMFunctionType(LLVMVoidType(), args, 3, 0);
+		putarray = LLVMAddFunction(module, "putarray", type);
+		LLVMSetFunctionCallConv(putarray, LLVMCCallConv);
+		LLVMSetLinkage(putarray, LLVMExternalLinkage);
+	}
 }
 
 void TermCodegen(LLVMValueRef function)
@@ -60,7 +94,7 @@ void TermCodegen(LLVMValueRef function)
 	LLVMAddTargetData(LLVMGetExecutionEngineTargetData(engine), pass);
 	LLVMAddConstantPropagationPass(pass);
 	LLVMAddInstructionCombiningPass(pass);
-	LLVMAddPromoteMemoryToRegisterPass(pass);
+	LLVMAddPromoteMemoryToRegisterPass(pass); //scalarrepl
 	LLVMAddReassociatePass(pass);
 	LLVMAddGVNPass(pass);
 	LLVMAddCFGSimplificationPass(pass);
@@ -110,9 +144,42 @@ void ContinueFunction(LLVMValueRef function)
 	LLVMPositionBuilderAtEnd(builder, last_block);
 }
 
+LLVMValueRef CreateArray()
+{
+	LLVMValueRef args[] = { ConstInt(0) };
+	return LLVMBuildCall(builder, newarray, args, 1, "");
+}
+
+LLVMValueRef GetArray(LLVMValueRef array, LLVMValueRef index)
+{
+	LLVMValueRef args[] = { array, index };
+	LLVMValueRef ptr = LLVMBuildCall(builder, getarray, args, 2, "");
+	
+	//!!ARL: Need to store type somewhere (per element if we are going to support mixed arrays).
+	return LLVMBuildBitCast(builder , ptr, LLVMPointerType(LLVMInt32Type(), 0), "entry");
+}
+
+LLVMValueRef PutArray(LLVMValueRef array, LLVMValueRef index, LLVMTypeRef type)
+{
+	//!!ARL: Memory leak -- insert check for NULL (and type).
+	LLVMValueRef value = LLVMBuildMalloc(builder, type, "");
+	
+	LLVMValueRef ptr = LLVMBuildBitCast(builder, value, LLVMPointerType(LLVMInt8Type(), 0), "ptr");
+	LLVMValueRef args[] = { array, index, ptr };
+	LLVMBuildCall(builder, putarray, args, 3, "");
+	
+	return value;
+}
+
 LLVMValueRef CreateValue(const char* name, LLVMTypeRef type)
 {
+	//!!ARL: Ensure alloca's all happen in the 'entry' block?
+	// This will make sure they only execute once (and mem2reg can deal with them).
 	return LLVMBuildAlloca(builder, type, name);
+	
+	// using malloc allows referencing values declared outside of functions
+	// it would be nice if we could determine if this is necessary and produce allocas otherwise
+	return LLVMBuildMalloc(builder, type, name); //!!ARL: Might have to make these globals to work across functions
 }
 
 LLVMValueRef LoadValue(LLVMValueRef v)

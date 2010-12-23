@@ -1,5 +1,6 @@
 
 #include <iostream>
+#include <vector>
 #include <antlr3treeparser.h>
 
 #include "MonarchLexer.h"
@@ -10,6 +11,28 @@ extern "C"
 int printn(ANTLR3_INT32 X)
 {
 	return printf("%d\n", X);
+}
+
+typedef std::vector<void*> dynarray;
+
+extern "C"
+dynarray* newarray(ANTLR3_INT32 size)
+{
+	return new dynarray(size);
+}
+
+extern "C" 
+void* getarray(dynarray* array, ANTLR3_INT32 index)
+{
+	return (index < array->size()) ? (*array)[index] : NULL;
+}
+
+extern "C" 
+void putarray(dynarray* array, ANTLR3_INT32 index, void* value)
+{
+	if (index >= array->size())
+		array->resize(index + 1, NULL);
+	(*array)[index] = value;
 }
 
 int ANTLR3_CDECL

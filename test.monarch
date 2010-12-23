@@ -32,6 +32,7 @@ else
 
 //while (x > 5) { --x; }
 
+/*
 for (x = 0; x < 10; ++x)
 {
 	if (x < 3)
@@ -42,13 +43,30 @@ for (x = 0; x < 10; ++x)
 	if (x == 5)
 		break;
 }
+*/
 
+// to support nested functions (references to outer vars),
+// we will need to package them in a struct and pass in a pointer
+// to the inner function(s) - similar to the 'this' pointer for members.
+// this might require a first pass to collect up all vars for a given
+// scope so we can identify which need to be specially packaged.
+
+//x = 100;
+
+/*
 test = function Test()
 {
 	print 200;
 };
 
 test();
+*/
+
+myarray = [];
+
+myarray[0] = 99;
+
+print myarray[0];
 
 /*
 
@@ -65,3 +83,12 @@ print x;
 */
 
 // - need support for functions and arrays so we can keep old tests around and ensure they don't break.
+
+
+// - arrays - use ANTLR3_VECTOR - expose add/new/get like print
+// store in symbol table as LLVMValeRef pointer - elements are LLVMValeRefs (from symbol table - functions, ints, etc.)
+
+// todo:
+// index into arrays (auto-size?)
+// allow += operator on arrays? (to push_back)
+
