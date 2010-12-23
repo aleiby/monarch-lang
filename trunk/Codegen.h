@@ -25,6 +25,10 @@ extern "C" {
 	void BuildReturn(LLVMValueRef function);
 	void ContinueFunction(LLVMValueRef function);
 	
+	LLVMValueRef CreateArray();
+	LLVMValueRef GetArray(LLVMValueRef array, LLVMValueRef index);
+	LLVMValueRef PutArray(LLVMValueRef array, LLVMValueRef index, LLVMTypeRef type);
+	
 	LLVMValueRef CreateValue(const char* name, LLVMTypeRef type);
 	LLVMValueRef LoadValue(LLVMValueRef v);
 	LLVMValueRef ConstInt(int value);
