@@ -52,6 +52,8 @@ void InitCodegen()
 	}
 	
 	{
+		//LLVMTypeRef elements[] = { LLVMPointerType(LLVMInt8Type(), 0), LLVMInt32Type() };
+		//LLVMAddTypeName(module, "array::entry", LLVMStructType(elements, 2, 0));
 		LLVMTypeRef args[] = { LLVMGetTypeByName(module, "array"), LLVMInt32Type() };
 		LLVMTypeRef type = LLVMFunctionType(LLVMPointerType(LLVMInt8Type(), 0), args, 2, 0);
 		getarray = LLVMAddFunction(module, "getarray", type);
@@ -155,14 +157,15 @@ LLVMValueRef GetArray(LLVMValueRef array, LLVMValueRef index)
 	LLVMValueRef args[] = { array, index };
 	LLVMValueRef ptr = LLVMBuildCall(builder, getarray, args, 2, "");
 	
-	//!!ARL: Need to store type somewhere (per element if we are going to support mixed arrays).
-	return LLVMBuildBitCast(builder , ptr, LLVMPointerType(LLVMInt32Type(), 0), "entry");
+	//LLVMValueRef indices[] = { ConstInt(0), ConstInt(0) };
+	//LLVMValueRef ptr = LoadValue(LLVMBuildGEP(builder, entry, indices, 2, "ptr"));
+	
+	return LLVMBuildBitCast(builder, ptr, LLVMPointerType(LLVMInt32Type(), 0), "entry");
 }
 
 LLVMValueRef PutArray(LLVMValueRef array, LLVMValueRef index, LLVMTypeRef type)
 {
-	//!!ARL: Memory leak -- insert check for NULL (and type).
-	LLVMValueRef value = LLVMBuildMalloc(builder, type, "");
+	LLVMValueRef value = LLVMBuildMalloc(builder, type, ""); //!!ARL: Memory leak
 	
 	LLVMValueRef ptr = LLVMBuildBitCast(builder, value, LLVMPointerType(LLVMInt8Type(), 0), "ptr");
 	LLVMValueRef args[] = { array, index, ptr };

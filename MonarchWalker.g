@@ -131,7 +131,17 @@ scope Symbols, Function; // global scope
 	;
 
 arrayLiteral returns [LLVMValueRef value]
-	:	^( ARRAY expression? ) { $value = CreateArray(); }
+@init
+{
+	ANTLR3_INT32 indx = 0;
+}
+	:	^( ARRAY { $value = CreateArray(); } //!!ARL: Store off count to init size?
+			(	^( EXPR ( r=assignment_expression
+			{
+				LLVMValueRef lvalue = PutArray($value, ConstInt(indx++), GetType($r.value));
+				Assignment(lvalue, $r.value);
+			}
+			)* ) )? )
 	;
 
 block[const char* name] returns [LLVMValueRef result, LLVMBasicBlockRef ref]
@@ -217,13 +227,13 @@ conditional_expression returns [LLVMValueRef value]
 @init
 {
 	LLVMValueRef results[] = { NULL, NULL };
-	LLVMBasicBlockRef blocks[] = { NULL, NULL };
+	LLVMBasicBlockRef blocks[] = { NULL, NULL, NULL };
 	LLVMValueRef function = SCOPE_TOP(Function)->ref;
 }
 	:	logical_or_expression { $value = $logical_or_expression.value; }
-	|	^( '?' cond=logical_or_expression
-			{ BeginBlock(blocks[0] = CreateBlock(function, "iftrue")); } iftrue=expression { results[0]=$iftrue.value; }
-			{ BeginBlock(blocks[1] = CreateBlock(function, "iffalse")); } iffalse=conditional_expression { results[1]=$iffalse.value; } )
+	|	^( '?' cond=logical_or_expression { blocks[2]=CreateBlock(function, "endif"); }
+			{ blocks[0]=CreateBlock(function, "iftrue"); BeginBlock(blocks[0]); } iftrue=expression { results[0]=$iftrue.value; JumpTo(blocks[2]); }
+			{ blocks[1]=CreateBlock(function, "iffalse"); BeginBlock(blocks[1]); } iffalse=conditional_expression { results[1]=$iffalse.value; JumpTo(blocks[2]); } )
 			{ $value = IfElse(function, $cond.value, results, blocks); }
 	;
 
@@ -366,18 +376,18 @@ scope Symbols, Function;
 ifStatement
 @init
 {
-	LLVMValueRef function = SCOPE_TOP(Function)->ref;
 	LLVMValueRef results[] = { NULL, NULL };
-	LLVMBasicBlockRef blocks[] = { NULL, NULL, CreateBlock(function, "endif") };
+	LLVMBasicBlockRef blocks[] = { NULL, NULL, NULL };
+	LLVMValueRef function = SCOPE_TOP(Function)->ref;
 }
-	:	^( COND cond=expression
+	:	^( COND cond=expression { blocks[2]=CreateBlock(function, "endif"); }
 			(	iftrue=block["iftrue"] { results[0]=$iftrue.result; blocks[0]=$iftrue.ref; JumpTo(blocks[2]); }
 			|	{ blocks[0]=CreateBlock(function, "iftrue"); BeginBlock(blocks[0]); } ^( STAT st=statement ) { results[0]=$st.result; JumpTo(blocks[2]); }
 			)
 			(	iffalse=block["iffalse"] { results[1]=$iffalse.result; blocks[1]=$iffalse.ref; JumpTo(blocks[2]); }
 			|	{ blocks[1]=CreateBlock(function, "iffalse"); BeginBlock(blocks[1]); } ^( STAT sf=statement ) { results[1]=$sf.result; JumpTo(blocks[2]); }
 			)?
-			)	{ IfElse(SCOPE_TOP(Function)->ref, $cond.value, results, blocks); }
+			)	{ IfElse(function, $cond.value, results, blocks); }
 	;
 
 literal returns [LLVMValueRef value]

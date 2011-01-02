@@ -62,9 +62,11 @@ test = function Test()
 test();
 */
 
-myarray = [];
+myarray = [ 99, 20 ];
 
-myarray[0] = 99;
+x = true ? 10 : 20;
+
+myarray[0] = x;
 
 print myarray[0];
 
@@ -83,10 +85,6 @@ print x;
 */
 
 // - need support for functions and arrays so we can keep old tests around and ensure they don't break.
-
-
-// - arrays - use ANTLR3_VECTOR - expose add/new/get like print
-// store in symbol table as LLVMValeRef pointer - elements are LLVMValeRefs (from symbol table - functions, ints, etc.)
 
 // todo:
 // index into arrays (auto-size?)

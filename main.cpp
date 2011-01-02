@@ -13,6 +13,8 @@ int printn(ANTLR3_INT32 X)
 	return printf("%d\n", X);
 }
 
+// if we have an array of ints, we malloc each element
+// and store a pointer to it in the array for access
 typedef std::vector<void*> dynarray;
 
 extern "C"
@@ -28,11 +30,11 @@ void* getarray(dynarray* array, ANTLR3_INT32 index)
 }
 
 extern "C" 
-void putarray(dynarray* array, ANTLR3_INT32 index, void* value)
+void putarray(dynarray* array, ANTLR3_INT32 index, void* ptr)
 {
 	if (index >= array->size())
 		array->resize(index + 1, NULL);
-	(*array)[index] = value;
+	(*array)[index] = ptr;
 }
 
 int ANTLR3_CDECL
