@@ -118,7 +118,7 @@ scope Symbols, Function; // global scope
 	SCOPE_TOP(Symbols)->free = freeTable;
 
 	InitCodegen();
-	$Function::ref = CreateFunction("main");
+	$Function::ref = CreateFunction("main", 0);
 	LLVMBasicBlockRef entry = CreateBlock($Function::ref, "entry");
 	BeginBlock(entry);
 }
@@ -287,6 +287,11 @@ unary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 	;
 
 postfix_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
+@init
+{
+	LLVMValueRef args[8]; //!!ARL: Store off count in parser for dynamic allocation
+	ANTLR3_UINT32 count = 0;
+}
 	:	primary_expression[$lvalue] { $value = $primary_expression.value; }
 	|	^( INDX array=postfix_expression[ANTLR3_FALSE] indx=expression )
 		{
@@ -300,7 +305,9 @@ postfix_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 			}
 			if (!$lvalue) $value = LoadValue($value);
 		}
-	|	^( CALL function=postfix_expression[ANTLR3_FALSE] args=expression? ) { $value = CallFunction($function.value); }
+	|	^( CALL function=postfix_expression[ANTLR3_FALSE]
+			( ^( EXPR ( r=assignment_expression { args[count++] = $r.value; } )* ) )? )
+			{ $value = CallFunction($function.value, args, count); }
 	|	^( '.' postfix_expression[ANTLR3_FALSE] NameLiteral )
 	|	^( POSTINC postfix_expression[ANTLR3_FALSE] )
 	|	^( POSTDEC postfix_expression[ANTLR3_FALSE] )
@@ -315,7 +322,7 @@ primary_expression[ANTLR3_BOOLEAN lvalue] returns [LLVMValueRef value]
 			if (HASEXCEPTION()) goto ruleprimary_expressionEx; // this should be generated automatically
 			if (SCOPE_SIZE(lvalue) > 0) defineSymbol(ctx, $NameLiteral.text, SCOPE_TOP(lvalue)->type);
 			$value = getSymbol(ctx, $NameLiteral.text);
-			if (!$lvalue) $value = LoadValue($value);
+			if (!$lvalue && IsPointer($value)) $value = LoadValue($value);
 		}
 	|	literal					{ $value = $literal.value; }
 	|	^( NESTED expression )	{ $value = $expression.value; }
@@ -366,8 +373,18 @@ scope Symbols, Function;
 	:	^( FUNC ( name=NameLiteral { function_name = $name ? (const char *)$name.text->chars : ""; } )?
 			^( PARAMS args+=NameLiteral* )
 		{
-			$Function::ref = CreateFunction(function_name);
-			addSymbol(ctx, $Function::ref, function_name);
+			ANTLR3_UINT32 count = $args ? $args->count : 0;
+			$Function::ref = CreateFunction(function_name, count);
+			
+			for (int i = 0; i < count; i++)
+			{
+				pANTLR3_BASE_TREE arg = (pANTLR3_BASE_TREE)$args->get($args, i);
+				const char* name = (const char *)arg->getText(arg)->chars;
+				LLVMValueRef value = GetParam($Function::ref, i, name);
+				addSymbol(ctx, value, name);
+			}
+			
+			addSymbol(ctx, $Function::ref, function_name); //!!ARL: Add at parent scope?
 			$value = $Function::ref;
 		}
 		block[function_name] )

@@ -120,19 +120,35 @@ LLVMTypeRef GetType(LLVMValueRef value)
 	return LLVMTypeOf(value);
 }
 
-LLVMValueRef CreateFunction(const char* name)
+int IsPointer(LLVMValueRef value)
 {
-	LLVMTypeRef type = LLVMFunctionType(LLVMVoidType(), NULL, 0, 0);
+	return LLVMGetTypeKind(GetType(value)) == LLVMPointerTypeKind;
+}
+
+LLVMValueRef GetParam(LLVMValueRef function, int index, const char* name)
+{
+	LLVMValueRef value = LLVMGetParam(function, index);
+	LLVMSetValueName(value, name);
+	return value;
+}
+
+LLVMValueRef CreateFunction(const char* name, int count)
+{
+	//!!ARL: Hardcoded type for now since it cannot be inferred
+	LLVMTypeRef* args = (LLVMTypeRef*)alloca(sizeof(LLVMTypeRef) * count);
+	for (int i = 0; i < count; i++)
+		args[i] = LLVMInt32Type();
+	
+	LLVMTypeRef type = LLVMFunctionType(LLVMVoidType(), args, count, 0);
 	LLVMValueRef function = LLVMAddFunction(module, name, type);
 	LLVMSetFunctionCallConv(function, LLVMCCallConv); //!!ARL: Necessary?
 	LLVMSetLinkage(function, LLVMExternalLinkage);
 	return function;
 }
 
-LLVMValueRef CallFunction(LLVMValueRef function)
+LLVMValueRef CallFunction(LLVMValueRef function, LLVMValueRef* args, int count)
 {
-	//!!ARL: Need to pass args.
-	return LLVMBuildCall(builder, function, NULL, 0, "");
+	return LLVMBuildCall(builder, function, args, count, "");
 }
 
 void BuildReturn(LLVMValueRef function)
