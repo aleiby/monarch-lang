@@ -62,6 +62,7 @@ test = function Test()
 test();
 */
 
+/*
 myarray = [ 99, 20 ];
 
 x = true ? 10 : 20;
@@ -69,6 +70,7 @@ x = true ? 10 : 20;
 myarray[0] = x;
 
 print myarray[0];
+*/
 
 /*
 
@@ -83,6 +85,13 @@ if (x > 0)
 print x;
 
 */
+
+test = function(x)
+{
+	print x;
+};
+
+test(99);
 
 // - need support for functions and arrays so we can keep old tests around and ensure they don't break.
 

@@ -19,9 +19,11 @@ extern "C" {
 	void TermCodegen(LLVMValueRef function);
 	
 	LLVMTypeRef GetType(LLVMValueRef value);
+	int IsPointer(LLVMValueRef value);
 
-	LLVMValueRef CreateFunction(const char* name);
-	LLVMValueRef CallFunction(LLVMValueRef function);
+	LLVMValueRef GetParam(LLVMValueRef function, int index, const char* name);
+	LLVMValueRef CreateFunction(const char* name, int count);
+	LLVMValueRef CallFunction(LLVMValueRef function, LLVMValueRef* args, int count);
 	void BuildReturn(LLVMValueRef function);
 	void ContinueFunction(LLVMValueRef function);
 	
